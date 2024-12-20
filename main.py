@@ -12,7 +12,7 @@ def acestream_scraper():
         return jsonify({"error": "Parameter 'term' is required"}), 400
 
     # URL della pagina principale
-    url_principale = 'https://livetv817.me/it/allupcoming/'
+    url_principale = 'https://livetv818.me/it/allupcoming/'
 
     try:
         # Effettua la richiesta alla pagina principale
