@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 import unicodedata
+import re
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
@@ -33,10 +34,11 @@ def normalize_string(s):
 def livetv_scraper(search_term):
     base_url = 'https://livetv'
     domain_suffix = '.me'
-    max_attempts = 5  # Numero massimo di tentativi con domini successivi
-    attempt = 818  # Inizia da livetv818.me (o il dominio corrente)
+    max_attempts = 2  # Numero massimo di tentativi con domini successivi
+    base_attempt = 819
+    attempt = base_attempt
 
-    while attempt <= 818 + max_attempts:
+    while attempt <= base_attempt + max_attempts:
         site_url = f'{base_url}{attempt}{domain_suffix}'
         path_upcoming = site_url + '/it/allupcoming/'
 
@@ -83,15 +85,9 @@ def livetv_scraper(search_term):
                 if game_title_tag:
                     game_title = game_title_tag.find('b').text.strip()
 
-                return {
-                    "source": "LiveTV",
-                    "search_term": search_term,
-                    "game_title": game_title,
-                    "acestream_links": acestream_links
-                }
-
+            match = re.search(r"livetv(\d+)\.me", response.url)
             return {
-                "source": f"LiveTV{attempt}",
+                "source": f"LiveTV{match.group(1)}",
                 "search_term": search_term,
                 "game_title": game_title,
                 "acestream_links": acestream_links
@@ -104,7 +100,7 @@ def livetv_scraper(search_term):
     # Se tutti i domini falliscono
     return {
         "source": f"LiveTV{attempt - 1}",
-        "error": f"Unable to connect to LiveTV on all attempts from {base_url}818{domain_suffix} to {base_url}{818 + max_attempts}{domain_suffix}"
+        "error": f"Unable to connect to LiveTV on all attempts from {base_url}{base_attempt}{domain_suffix} to {base_url}{base_attempt + max_attempts}{domain_suffix}"
     }
 
 def platinsport_scraper(search_term):
