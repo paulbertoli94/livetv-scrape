@@ -1,11 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import requests
 import unicodedata
 import re
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="frontend/build", static_url_path="/")
+
+@app.route("/")
+def serve():
+    return send_from_directory(app.static_folder, "index.html")
 
 @app.route('/acestream', methods=['GET'])
 def acestream_scraper():
