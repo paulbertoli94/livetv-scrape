@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 import requests
 import unicodedata
 import re
@@ -6,6 +7,7 @@ from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__, static_folder="frontend/build", static_url_path="/")
+CORS(app, origins=["http://localhost:3000"])
 
 @app.route("/")
 def serve():
