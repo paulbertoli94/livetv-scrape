@@ -49,15 +49,13 @@ export default function App() {
         if (!firstSearchDone) {
             if (window.innerWidth < 768) {
                 setMobileMoving(true);
-                setBarPosition(10);
-            } else {
-                setBarPosition(15);
+                setBarPosition(0);
             }
         } else if (window.innerWidth >= 768) {
             setDesktopSecondSearch(true);
             setBarPosition(35);
             setTimeout(() => {
-                setBarPosition(15);
+                setBarPosition(0);
             }, 400);
         }
 
