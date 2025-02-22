@@ -24,12 +24,14 @@ export default function App() {
     }, [darkMode]);
 
     useEffect(() => {
-        inputRef.current?.focus();
-        const handleClick = () => {
-            setTimeout(() => inputRef.current?.focus(), 200);
-        };
-        document.addEventListener("click", handleClick);
-        return () => document.removeEventListener("click", handleClick);
+        if (window.innerWidth >= 768) {
+            inputRef.current?.focus();
+            const handleClick = () => {
+                setTimeout(() => inputRef.current?.focus(), 200);
+            };
+            document.addEventListener("click", handleClick);
+            return () => document.removeEventListener("click", handleClick);
+        }
     }, []);
 
     useEffect(() => {
@@ -69,6 +71,10 @@ export default function App() {
             setMobileMoving(false);
             setDesktopSecondSearch(false);
             setFirstSearchDone(true);
+            // Rimuovo il focus dall'input solo in caso di successo
+            if (window.innerWidth < 768) {
+                inputRef.current?.blur();
+            }
         } catch (err) {
             setError("Errore nel recupero dei dati");
             setBarPosition(0);

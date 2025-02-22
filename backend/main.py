@@ -15,11 +15,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Creiamo una sessione globale per riutilizzare le connessioni
 session = requests.Session()
 
-def make_request_with_retry(url, retries=3, delay=0.3, timeout=1.5):
+def make_request_with_retry(url, retries=3, delay=0.3, timeout=1.2):
     """
     Effettua una richiesta HTTP con sessione, retry e timeout configurabili.
     """
     for attempt in range(retries):
+        # per ogni tentativo aumento il timeout con il delay
+        timeout = timeout + delay
         try:
             response = session.get(url, timeout=timeout)
             response.raise_for_status()
