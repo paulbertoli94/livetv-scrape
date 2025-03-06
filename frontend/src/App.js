@@ -45,6 +45,9 @@ export default function App() {
 
     const handleSearch = async () => {
         if (!searchTerm) return;
+        if (window.innerWidth < 768) {
+            inputRef.current?.blur();
+        }
         setLoading(true);
         setError(null);
         setSearched(false);
