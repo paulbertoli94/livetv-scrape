@@ -1,12 +1,13 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
+import logging
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import requests
 import unicodedata
-import re
-import logging
-import time
 from bs4 import BeautifulSoup
-from concurrent.futures import ThreadPoolExecutor
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 
 app = Flask(__name__, static_folder="frontend/build", static_url_path="/")
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -14,6 +15,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Creiamo una sessione globale per riutilizzare le connessioni
 session = requests.Session()
+
 
 def make_request_with_retry(url, retries=3, delay=0.3, timeout=1.2):
     """
@@ -32,8 +34,10 @@ def make_request_with_retry(url, retries=3, delay=0.3, timeout=1.2):
     logging.error(f"Impossibile ottenere una risposta da {url} dopo {retries} tentativi")
     return None  # Se tutte le richieste falliscono
 
+
 @app.route("/")
 def serve():
+    logging.info(f"*** Chiamata GET /path → static_folder={app.static_folder}")
     return send_from_directory(app.static_folder, "index.html")
 
 
@@ -63,8 +67,10 @@ def acestream_scraper():
 
     return jsonify(result)
 
+
 def normalize_string(s):
     return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
+
 
 def livetv_scraper(search_term):
     logging.info(f"Inizio scraping LiveTV per: {search_term}")
@@ -73,7 +79,7 @@ def livetv_scraper(search_term):
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
-    base_attempt = 852
+    base_attempt = 853
     attempt = base_attempt
 
     while attempt <= base_attempt + max_attempts:
@@ -143,6 +149,7 @@ def livetv_scraper(search_term):
         "error": "Unable to connect to LiveTV"
     }
 
+
 def platinsport_scraper(search_term):
     logging.info(f"Inizio scraping PlatinSport per: {search_term}")
     start_time = time.time()
@@ -182,7 +189,8 @@ def platinsport_scraper(search_term):
             found_title = False
 
             for element in div_content.contents:
-                if isinstance(element, str) and normalize_string(search_term.lower()) in normalize_string(element.lower()):
+                if isinstance(element, str) and normalize_string(search_term.lower()) in normalize_string(
+                        element.lower()):
                     if found_title:
                         break
                     game_title = normalize_string(element.strip())
@@ -215,6 +223,7 @@ def platinsport_scraper(search_term):
     except Exception as e:
         logging.error(f"Errore PlatinSport: {e}")
         return {"source": "PlatinSport", "error": str(e)}
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, threaded=True)
