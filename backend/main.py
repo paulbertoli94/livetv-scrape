@@ -31,8 +31,7 @@ def make_request_with_retry(url, retries=3, delay=0.3, timeout=1.2):
         except requests.exceptions.RequestException as e:
             logging.warning(f"Tentativo {attempt + 1} fallito per {url}: {e}")
             time.sleep(delay)
-    logging.error(f"Impossibile ottenere una risposta da {url} dopo {retries} tentativi")
-    return None  # Se tutte le richieste falliscono
+    raise requests.exceptions.RequestException(f"Impossibile ottenere una risposta da {url} dopo {retries} tentativi")
 
 
 @app.route("/")
@@ -79,7 +78,7 @@ def livetv_scraper(search_term):
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
-    base_attempt = 853
+    base_attempt = 854
     attempt = base_attempt
 
     while attempt <= base_attempt + max_attempts:
@@ -89,7 +88,7 @@ def livetv_scraper(search_term):
         try:
             response = make_request_with_retry(path_upcoming)
             response.raise_for_status()
-            logging.info(f"LiveTV risposta ricevuta in {time.time() - start_time:.2f}s")
+            logging.info(f"LiveTV {attempt} risposta ricevuta in {time.time() - start_time:.2f}s")
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
