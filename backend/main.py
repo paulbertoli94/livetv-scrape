@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 session = requests.Session()
 
 
-def make_request_with_retry(url, retries=3, delay=0.3, timeout=1.2):
+def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2):
     """
     Effettua una richiesta HTTP con sessione, retry e timeout configurabili.
     """
@@ -78,7 +78,7 @@ def livetv_scraper(search_term):
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
-    base_attempt = 854
+    base_attempt = 860
     attempt = base_attempt
 
     while attempt <= base_attempt + max_attempts:

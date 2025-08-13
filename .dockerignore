@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# Node
+frontend/node_modules/
+frontend/build/
+frontend/npm-debug.log
+
+# Editor/IDE
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Log / test / cache
+*.log
+coverage/
+.cache/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

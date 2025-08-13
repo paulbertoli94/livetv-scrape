@@ -1,0 +1,9 @@
+services:
+  acestream-scrape:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: acestream-scrape
+    ports:
+      - "5000:5000"
+    restart: unless-stopped

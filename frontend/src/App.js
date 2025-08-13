@@ -151,7 +151,7 @@ export default function App() {
                         >
                             <p className="text-gray-400 text-sm font-semibold">{source.game_title || "Senza titolo"}</p>
                             <ul className="mt-2">
-                                {source.acestream_links.length > 0 ? (
+                                {Array.isArray(source.acestream_links) && source.acestream_links.length > 0 ? (
                                     source.acestream_links.map((link, i) => (
                                         <li key={i}
                                             className="mt-2 flex justify-between items-center text-ellipsis overflow-hidden">
