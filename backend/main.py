@@ -1,7 +1,9 @@
 import logging
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import requests
 import unicodedata
@@ -9,9 +11,46 @@ from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
-app = Flask(__name__, static_folder="frontend/build", static_url_path="/")
-CORS(app, resources={r"/*": {"origins": "*"}})
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def resolve_frontend_dir() -> Path:
+    env_dir = os.getenv("FRONTEND_DIR")
+    candidates = []
+    if env_dir:
+        candidates.append(Path(env_dir))
+
+    candidates += [
+        BASE_DIR / "frontend" / "build",
+        BASE_DIR / "frontend" / "dist",
+        BASE_DIR.parent / "frontend" / "build",
+        BASE_DIR.parent / "frontend" / "dist",
+    ]
+
+    tried = []
+    for p in candidates:
+        if not p:
+            continue
+        idx = p / "index.html"
+        tried.append(str(idx))
+        if idx.exists():
+            logging.info(f"[STATIC] Uso frontend da: {p}")
+            return p.resolve()
+
+    raise FileNotFoundError(
+        "index.html non trovato. Percorsi provati:\n- " + "\n- ".join(tried) +
+        "\nSuggerimenti:\n"
+        "- Imposta la variabile d'ambiente FRONTEND_DIR verso la cartella che contiene index.html\n"
+        "- Oppure builda il frontend (es. CRA: npm run build → frontend/build)\n"
+        "- In PyCharm verifica Working Directory = cartella 'backend' (o dove sta questo file)\n"
+    )
+
+
+FRONTEND_DIR = resolve_frontend_dir()
+
+app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Creiamo una sessione globale per riutilizzare le connessioni
 session = requests.Session()
@@ -72,13 +111,19 @@ def normalize_string(s):
 
 
 def livetv_scraper(search_term):
+    replacements = {
+        "f1": "formula 1",
+        "motogp": "moto gp"
+    }
+    search_term = replacements.get(search_term.lower(), search_term)
+
     logging.info(f"Inizio scraping LiveTV per: {search_term}")
     start_time = time.time()
 
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
-    base_attempt = 860
+    base_attempt = 861
     attempt = base_attempt
 
     while attempt <= base_attempt + max_attempts:
@@ -91,15 +136,34 @@ def livetv_scraper(search_term):
             logging.info(f"LiveTV {attempt} risposta ricevuta in {time.time() - start_time:.2f}s")
 
             soup = BeautifulSoup(response.text, 'html.parser')
+            tds = soup.find_all("td")
 
-            partite = soup.find_all('a', href=True)
-            link_partite = [a['href'] for a in partite if search_term.lower() in a.text.lower()]
+            risultati = []
+            for td in tds:
+                titolo_tag = td.find("a", class_="live")
+                desc_tag = td.find("span", class_="evdesc")
+
+                if titolo_tag:
+                    titolo = titolo_tag.get_text(strip=True)
+                    url = titolo_tag["href"]
+                else:
+                    continue
+
+                descrizione = desc_tag.get_text(" ", strip=True) if desc_tag else ""
+
+                # controllo sia su titolo che su descrizione
+                if search_term.lower() in titolo.lower() or search_term.lower() in descrizione.lower():
+                    risultati.append({
+                        "titolo": titolo,
+                        "descrizione": descrizione,
+                        "url": url
+                    })
 
             acestream_links = []
             game_title = None
 
-            if link_partite:
-                url_partita = site_url + link_partite[0]
+            if risultati:
+                url_partita = site_url + risultati[0]["url"]
                 response_partita = make_request_with_retry(url_partita)
                 response_partita.raise_for_status()
                 logging.info(f"LiveTV dettagli partita ricevuti in {time.time() - start_time:.2f}s")
