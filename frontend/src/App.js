@@ -2,10 +2,12 @@ import {useEffect, useRef, useState} from "react";
 import {motion} from "framer-motion";
 import {FaArrowRight, FaCopy, FaMoon, FaSearch, FaSun} from "react-icons/fa";
 import Cookies from "js-cookie";
+import AceStreamPlayer from "./AceStreamPlayer";
 
 export default function App() {
     const [searchTerm, setSearchTerm] = useState("");
     const [results, setResults] = useState(null);
+    const [playerCid, setPlayerCid] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [searched, setSearched] = useState(false);
@@ -99,6 +101,27 @@ export default function App() {
         navigator.clipboard.writeText(text);
     };
 
+    // Estrae CID/InfoHash da vari formati di link
+    const extractCid = (raw) => {
+        if (!raw) return null;
+        // acestream://<CID>
+        const a = raw.match(/^acestream:\/\/([A-Za-z0-9]+)/i);
+        if (a) return a[1];
+        // magnet:?xt=urn:btih:<INFOHASH>
+        const b = raw.match(/btih:([A-F0-9]{40})/i);
+        if (b) return b[1];
+        // stringa nuda 40 hex
+        const c = raw.match(/^([A-F0-9]{40})$/i);
+        if (c) return c[1];
+        return null;
+    };
+
+    const openInPlayer = (rawLink) => {
+        const cid = extractCid(rawLink);
+        if (cid) setPlayerCid(cid);
+        else alert("Impossibile ricavare il CID da questo link.");
+    };
+
     return (
         <div
             className={`flex flex-col items-center min-h-screen p-4 select-none ${darkMode ? 'bg-gray-950 text-white' : 'bg-gray-100 text-black'}`}>
@@ -165,6 +188,18 @@ export default function App() {
                                             </a>
                                             <FaCopy className="text-purple-600 cursor-pointer ml-2"
                                                     onClick={() => handleCopy(link.link)}/>
+                                            <div className="flex items-center gap-2 ml-2 shrink-0">
+                                                <button
+                                                    className="text-sm px-2 py-1 rounded-md border border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white transition"
+                                                    onClick={() => openInPlayer(link.link)}
+                                                    title="Riproduci nel player integrato"
+                                                >
+                                                    Play
+                                                </button>
+                                                <FaCopy className="text-purple-600 cursor-pointer"
+                                                        onClick={() => handleCopy(link.link)}
+                                                        title="Copia il link"/>
+                                            </div>
                                         </li>
                                     ))
                                 ) : (
@@ -174,6 +209,14 @@ export default function App() {
                         </motion.div>
                     ))}
                 </div>
+            )}
+            {/* overlay player dentro al root */}
+            {playerCid && (
+                <AceStreamPlayer
+                    cid={playerCid}
+                    dark={darkMode}
+                    onClose={() => setPlayerCid(null)}
+                />
             )}
         </div>
     );

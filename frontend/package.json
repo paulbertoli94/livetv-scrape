@@ -2,8 +2,10 @@
   "name": "acestream-frontend",
   "version": "1.0.0",
   "private": true,
+  "proxy": "http://127.0.0.1:6878",
   "dependencies": {
     "framer-motion": "^12.4.3",
+    "hls.js": "^1.6.12",
     "js-cookie": "^3.0.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
