@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from "react";
 import {motion} from "framer-motion";
-import {FaArrowRight, FaCopy, FaMoon, FaSearch, FaSun} from "react-icons/fa";
+import {FaArrowRight, FaCopy, FaMoon, FaSearch, FaSun, FaTv, FaUnlink} from "react-icons/fa";
 import Cookies from "js-cookie";
 
 export default function App() {
@@ -17,22 +17,83 @@ export default function App() {
         return Cookies.get("darkMode") === "true";
     });
     const inputRef = useRef(null);
+    // pairing TV
+    const [pairedDeviceId, setPairedDeviceId] = useState(() => Cookies.get("pairedDeviceId") || null);
+    const [showPairModal, setShowPairModal] = useState(false);
+    const [pairCode, setPairCode] = useState("");
+
+    const DIGITS = 6;
+    const [pairDigits, setPairDigits] = useState(Array(DIGITS).fill(""));
+    const digitRefs = useRef([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const [pairError, setPairError] = useState("");
+    const resetDigits = () => {
+        const empty = Array(DIGITS).fill("");
+        setDigitsAndPairCode(empty);
+        setTimeout(() => digitRefs.current[0]?.focus(), 0);
+    };
+
+    const setDigitsAndPairCode = (next) => {
+        setPairDigits(next);
+        setPairCode(next.join(""));
+    };
+
+    useEffect(() => {
+        if (showPairModal) {
+            setPairError("");
+            resetDigits();
+        }
+    }, [showPairModal]);
+
+    // quando apro la modale: reset e focus sul primo
+    useEffect(() => {
+        if (showPairModal) {
+            const empty = Array(DIGITS).fill("");
+            setDigitsAndPairCode(empty);
+            setTimeout(() => digitRefs.current[0]?.focus(), 0);
+        }
+    }, [showPairModal]);
+
+    // userId locale (solo per demo/back-end semplice)
+    const [userId, setUserId] = useState(() => Cookies.get("userId") || null);
+
     const BASE_URL = process.env.NODE_ENV === "development" ? "http://localhost:5000" : "";
+
+    useEffect(() => {
+        if (!userId) {
+            const rand = crypto.getRandomValues(new Uint32Array(4));
+            const uid = "web-" + Array.from(rand).map(n => n.toString(16)).join("");
+            Cookies.set("userId", uid, {expires: 365});
+            setUserId(uid);
+        }
+    }, [userId]);
 
     useEffect(() => {
         Cookies.set("darkMode", darkMode, {expires: 365});
     }, [darkMode]);
 
+    // focus sulla search SOLO quando la modale non è aperta
     useEffect(() => {
-        if (window.innerWidth >= 768) {
-            inputRef.current?.focus();
-            const handleClick = () => {
-                setTimeout(() => inputRef.current?.focus(), 200);
-            };
-            document.addEventListener("click", handleClick);
-            return () => document.removeEventListener("click", handleClick);
+        if (window.innerWidth < 768) return;
+
+        const focusSearch = () => inputRef.current?.focus();
+
+        if (!showPairModal) {
+            focusSearch();               // focus iniziale
+        } else {
+            inputRef.current?.blur();    // togli focus quando apro la modale
         }
-    }, []);
+
+        const handleClick = () => {
+            if (!showPairModal) {
+                setTimeout(focusSearch, 200);
+            }
+        };
+
+        document.addEventListener("click", handleClick);
+        return () => document.removeEventListener("click", handleClick);
+    }, [showPairModal]);
 
     useEffect(() => {
         if (loading && window.innerWidth >= 768) {
@@ -42,6 +103,73 @@ export default function App() {
             return () => clearInterval(interval);
         }
     }, [loading]);
+
+    const handleDigitChange = (idx, e) => {
+        if (isSubmitting) return;
+        setPairError("");
+
+        const raw = e.target.value;
+        const only = raw.replace(/\D/g, "");
+        const next = [...pairDigits];
+
+        if (only.length === 0) {
+            next[idx] = "";
+            setDigitsAndPairCode(next);
+            return;
+        }
+        if (only.length > 1) {
+            for (let i = 0; i < only.length && idx + i < DIGITS; i++) next[idx + i] = only[i];
+            setDigitsAndPairCode(next);
+            const last = Math.min(idx + only.length, DIGITS - 1);
+            digitRefs.current[last]?.focus();
+        } else {
+            next[idx] = only;
+            setDigitsAndPairCode(next);
+            if (idx < DIGITS - 1) digitRefs.current[idx + 1]?.focus();
+        }
+
+        const complete = next.join("");
+        if (complete.length === DIGITS) {
+            setTimeout(() => handlePairSubmit(complete), 0);
+        }
+    };
+
+    const handlePaste = (idx, e) => {
+        const txt = (e.clipboardData?.getData("text") || "").replace(/\D/g, "");
+        if (!txt) return;
+        e.preventDefault();
+
+        const next = [...pairDigits];
+        for (let i = 0; i < txt.length && idx + i < DIGITS; i++) {
+            next[idx + i] = txt[i];
+        }
+        setDigitsAndPairCode(next);
+
+        const last = Math.min(idx + txt.length, DIGITS - 1);
+        digitRefs.current[last]?.focus();
+
+        const complete = next.join("");
+        if (complete.length === DIGITS) {
+            setTimeout(() => handlePairSubmit(complete), 0);
+        }
+    };
+
+    const handleDigitKeyDown = (idx, e) => {
+        if (e.key === "Backspace" && !pairDigits[idx] && idx > 0) digitRefs.current[idx - 1]?.focus();
+        if (e.key === "ArrowLeft" && idx > 0) {
+            e.preventDefault();
+            digitRefs.current[idx - 1]?.focus();
+        }
+        if (e.key === "ArrowRight" && idx < DIGITS - 1) {
+            e.preventDefault();
+            digitRefs.current[idx + 1]?.focus();
+        }
+        if (e.key === "Enter") {
+            e.preventDefault();
+            const complete = pairDigits.join("");
+            if (complete.length === DIGITS) handlePairSubmit(complete);
+        }
+    };
 
     const handleSearch = async () => {
         if (!searchTerm) return;
@@ -99,11 +227,91 @@ export default function App() {
         navigator.clipboard.writeText(text);
     };
 
+    // pairing: invia il codice mostrato in TV
+    const handlePairSubmit = async (codeArg) => {
+        if (isSubmitting) return;
+        const code = (codeArg ?? pairCode).trim();
+        if (code.length !== DIGITS) return;
+
+        setIsSubmitting(true);
+        setPairError("");
+        try {
+            const res = await fetch(`${BASE_URL}/tv/pair`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({pairCode: code, userId})
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Codice non valido o scaduto");
+            Cookies.set("pairedDeviceId", data.deviceId, {expires: 365});
+            setPairedDeviceId(data.deviceId);
+            setShowPairModal(false);          // ✅ chiude solo su successo
+        } catch (e) {
+            setPairError(e.message || "Codice non valido o scaduto");
+            resetDigits();                    // ✅ svuota cifre e rifocalizza
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const unpairTv = () => {
+        Cookies.remove("pairedDeviceId");
+        setPairedDeviceId(null);
+    };
+
+    // invio comando alla TV (apre AceStream con CID)
+    const sendToTv = async (rawLink) => {
+        if (!pairedDeviceId) {
+            setShowPairModal(true);
+            return;
+        }
+        const cid = extractCid(rawLink);
+        if (!cid) {
+            alert("Non riesco a estrarre il CID da questo link.");
+            return;
+        }
+        try {
+            const res = await fetch(`${BASE_URL}/tv/send?userId=${encodeURIComponent(userId)}`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({deviceId: pairedDeviceId, action: "acestream", cid})
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || "Invio fallito");
+            // feedback semplice
+            alert("Inviato alla TV!");
+        } catch (e) {
+            alert(e.message || "Errore invio");
+        }
+    };
+
     return (
         <div
             className={`flex flex-col items-center min-h-screen p-4 select-none ${darkMode ? 'bg-gray-950 text-white' : 'bg-gray-100 text-black'}`}>
-            <div className="w-full flex justify-end p-4">
-                <button onClick={() => setDarkMode(!darkMode)} className="text-xl focus:outline-none">
+            <div className="w-full flex items-center justify-end p-4 gap-4">
+                {/* Stato TV */}
+                {pairedDeviceId ? (
+                    <button
+                        className="flex items-center gap-3 px-3 py-1 rounded-md border border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition"
+                        title={`TV collegata (${pairedDeviceId}) — clicca per scollegare`}
+                        onClick={unpairTv}
+                    >
+                        <FaTv className="shrink-0"/>
+                        <span className="hidden sm:inline">TV collegata</span>
+                        <FaUnlink className="opacity-80 ml-1"/>
+                    </button>
+                ) : (
+                    <button
+                        className="flex items-center gap-3 px-3 py-1 rounded-md border border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white transition"
+                        title="Collega una TV"
+                        onClick={() => setShowPairModal(true)}
+                    >
+                        <FaTv className="shrink-0"/>
+                        <span className="hidden sm:inline">Collega TV</span>
+                    </button>
+                )}
+
+                <button onClick={() => setDarkMode(!darkMode)} className="text-2xl focus:outline-none">
                     {darkMode ? <FaSun className="text-purple-600"/> : <FaMoon className="text-purple-600"/>}
                 </button>
             </div>
@@ -165,6 +373,14 @@ export default function App() {
                                             </a>
                                             <FaCopy className="text-purple-600 cursor-pointer ml-2"
                                                     onClick={() => handleCopy(link.link)}/>
+                                            {/* INVIA ALLA TV */}
+                                            {pairedDeviceId && (
+                                                <FaTv
+                                                    className="text-purple-600 cursor-pointer ml-2"
+                                                    onClick={() => sendToTv(link.link)}
+                                                    title="Invia alla TV collegata"
+                                                />
+                                            )}
                                         </li>
                                     ))
                                 ) : (
@@ -173,6 +389,59 @@ export default function App() {
                             </ul>
                         </motion.div>
                     ))}
+                </div>
+            )}
+            {showPairModal && (
+                <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center"
+                     onClick={() => setShowPairModal(false)}>
+                    <div
+                        className={`${darkMode ? "bg-gray-900 text-white" : "bg-white text-black"} w-[92vw] max-w-md rounded-2xl p-5`}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h2 className="text-lg font-semibold mb-2">Collega una TV</h2>
+                        <p className="text-sm opacity-80 mb-3">
+                            Inserisci il <strong>codice a 6 cifre</strong> mostrato sulla TV (puoi anche incollarlo).
+                        </p>
+
+                        <form
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                handlePairSubmit(pairDigits.join(""));
+                            }}
+                            className="flex flex-col gap-4"
+                        >
+                            <div className="flex justify-center gap-2">
+                                {Array.from({length: DIGITS}).map((_, idx) => (
+                                    <input
+                                        key={idx}
+                                        ref={(el) => (digitRefs.current[idx] = el)}
+                                        value={pairDigits[idx]}
+                                        onChange={(e) => handleDigitChange(idx, e)}
+                                        onPaste={(e) => handlePaste(idx, e)}
+                                        onKeyDown={(e) => handleDigitKeyDown(idx, e)}
+                                        type="tel"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        autoComplete="one-time-code"
+                                        autoFocus={idx === 0}
+                                        maxLength={1}
+                                        className={`w-12 h-14 text-center text-2xl rounded-lg border outline-none
+                                          ${pairError
+                                            ? "border-red-500 focus:border-red-500"
+                                            : darkMode
+                                                ? "bg-gray-800 border-gray-700 focus:border-purple-500"
+                                                : "bg-white border-gray-300 focus:border-purple-600"
+                                        }`}
+                                    />
+                                ))}
+                            </div>
+                            {pairError && (
+                                <div className="text-red-500 text-sm text-center -mt-2">
+                                    {pairError}
+                                </div>
+                            )}
+                        </form>
+                    </div>
                 </div>
             )}
         </div>

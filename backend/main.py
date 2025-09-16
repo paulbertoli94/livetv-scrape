@@ -11,6 +11,8 @@ from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
+from pair import tv_bp
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -51,6 +53,7 @@ FRONTEND_DIR = resolve_frontend_dir()
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
 CORS(app, resources={r"/*": {"origins": "*"}})
+app.register_blueprint(tv_bp)
 
 # Creiamo una sessione globale per riutilizzare le connessioni
 session = requests.Session()
@@ -88,7 +91,9 @@ def acestream_scraper():
     if not search_term:
         logging.error("Parametro 'term' mancante")
         return jsonify({"error": "Parameter 'term' is required"}), 400
-
+    res = test_link(search_term)
+    if res:
+        return res
     start_time = time.time()
 
     with ThreadPoolExecutor() as executor:
@@ -108,6 +113,22 @@ def acestream_scraper():
 
 def normalize_string(s):
     return unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
+
+
+def test_link(search_term):
+    if search_term == "test":
+        return jsonify([
+            {
+                "search_term": search_term,
+                "game_title": "Red Bull TV",
+                "acestream_links": [
+                    {
+                        "link": "acestream://963d5f09983d6816022fc2c45dd4d974337adb09",
+                        "bitrate": "3000 kbps",
+                    }
+                ],
+            }
+        ])
 
 
 def livetv_scraper(search_term):
