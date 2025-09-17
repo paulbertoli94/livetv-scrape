@@ -1,5 +1,4 @@
 import logging
-import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -18,7 +17,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# 1) Trova la build Vite (dist) in locale e in docker
 CANDIDATES = [
     BASE_DIR / "frontend" / "dist",  # docker / run dopo COPY
     BASE_DIR.parent / "frontend" / "dist",  # sviluppo locale: ../frontend/dist
@@ -38,44 +36,14 @@ if not FRONTEND_DIR:
 
 logging.info(f"[STATIC] Uso frontend da: {FRONTEND_DIR}")
 
-# 2) Crea UNA sola app, montando gli statici alla root
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
 CORS(app)  # se frontend e API sono same-origin puoi rimuoverlo
 app.register_blueprint(tv_bp)
-
-# (facoltativo) sessione requests riutilizzabile
 session = requests.Session()
 
 
-# 3) Cache: asset hashati (Vite) = lungo; index = no-store
-@app.after_request
-def _cache_headers(resp):
-    path = (request.path or "")
-    if path.startswith("/assets/") or re.search(r"\.[a-f0-9]{8}\.", path):
-        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif path.endswith("index.html") or path == "/":
-        resp.headers["Cache-Control"] = "no-store"
-    return resp
-
-
-# 4) Root → index.html
 @app.get("/")
 def _index():
-    return send_from_directory(app.static_folder, "index.html")
-
-
-# 5) (opzionale) route esplicita per asset
-@app.get("/assets/<path:filename>")
-def _assets(filename):
-    return send_from_directory(os.path.join(app.static_folder, "assets"), filename)
-
-
-# 6) Fallback SPA: se il file non esiste, torna index.html
-@app.get("/<path:path>")
-def _spa_fallback(path):
-    full = os.path.join(app.static_folder, path)
-    if os.path.isfile(full):
-        return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, "index.html")
 
 
