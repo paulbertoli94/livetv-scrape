@@ -1,7 +1,10 @@
 import {useEffect, useRef, useState} from "react";
 import {motion} from "framer-motion";
-import {FaArrowRight, FaCopy, FaMoon, FaSearch, FaSun, FaTv, FaUnlink} from "react-icons/fa";
+import {FaArrowRight, FaCopy, FaGooglePlay, FaMoon, FaSearch, FaSun} from "react-icons/fa";
+import {MdCast, MdCastConnected} from "react-icons/md";
 import Cookies from "js-cookie";
+
+const TV_APP_URL = "https://play.google.com/store/apps/details?id=com.acetvpair";
 
 export default function App() {
     const [searchTerm, setSearchTerm] = useState("");
@@ -57,6 +60,8 @@ export default function App() {
 
     // userId locale (solo per demo/back-end semplice)
     const [userId, setUserId] = useState(() => Cookies.get("userId") || null);
+    const abortRef = useRef(null);
+    const requestIdRef = useRef(0);
 
     const BASE_URL = process.env.NODE_ENV === "development" ? "http://localhost:5000" : "";
 
@@ -176,6 +181,15 @@ export default function App() {
         if (window.innerWidth < 768) {
             inputRef.current?.blur();
         }
+
+        // Incremento ID richiesta e salvo il corrente
+        requestIdRef.current += 1;
+        const thisReqId = requestIdRef.current;
+
+        // annullo eventuale fetch precedente
+        if (abortRef.current) abortRef.current.abort();
+        abortRef.current = new AbortController();
+
         setLoading(true);
         setError(null);
         setSearched(false);
@@ -196,6 +210,7 @@ export default function App() {
         try {
             const response = await fetch(`${BASE_URL}/acestream?term=${encodeURIComponent(searchTerm)}`);
             const data = await response.json();
+            if (thisReqId !== requestIdRef.current) return;
             setResults(data);
             setSearched(true);
             setBarPosition(0);
@@ -207,6 +222,8 @@ export default function App() {
                 inputRef.current?.blur();
             }
         } catch (err) {
+            if (err.name === "AbortError" || thisReqId !== requestIdRef.current) return;
+
             setError("Errore nel recupero dei dati");
             setBarPosition(0);
             setMobileMoving(false);
@@ -259,6 +276,20 @@ export default function App() {
         setPairedDeviceId(null);
     };
 
+    const extractCid = (raw) => {
+        if (!raw) return null;
+        // acestream://<CID>
+        const a = raw.match(/^acestream:\/\/([A-Za-z0-9]+)/i);
+        if (a) return a[1];
+        // magnet:?xt=urn:btih:<INFOHASH>
+        const b = raw.match(/btih:([A-F0-9]{40})/i);
+        if (b) return b[1];
+        // stringa nuda 40 hex
+        const c = raw.match(/^([A-F0-9]{40})$/i);
+        if (c) return c[1];
+        return null;
+    };
+
     // invio comando alla TV (apre AceStream con CID)
     const sendToTv = async (rawLink) => {
         if (!pairedDeviceId) {
@@ -292,22 +323,21 @@ export default function App() {
                 {/* Stato TV */}
                 {pairedDeviceId ? (
                     <button
-                        className="flex items-center gap-3 px-3 py-1 rounded-md border border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition"
+                        className="p-2 rounded-full hover:bg-purple-600/10 focus:outline-none focus:ring-2 focus:ring-purple-500"
                         title={`TV collegata (${pairedDeviceId}) — clicca per scollegare`}
+                        aria-label="TV collegata: scollega"
                         onClick={unpairTv}
                     >
-                        <FaTv className="shrink-0"/>
-                        <span className="hidden sm:inline">TV collegata</span>
-                        <FaUnlink className="opacity-80 ml-1"/>
+                        <MdCastConnected className="shrink-0 text-3xl sm:text-2xl text-green-600"/>
                     </button>
                 ) : (
                     <button
-                        className="flex items-center gap-3 px-3 py-1 rounded-md border border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white transition"
-                        title="Collega una TV"
+                        className="p-2 rounded-full hover:bg-purple-600/10 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        title="Collega TV"
+                        aria-label="Collega TV"
                         onClick={() => setShowPairModal(true)}
                     >
-                        <FaTv className="shrink-0"/>
-                        <span className="hidden sm:inline">Collega TV</span>
+                        <MdCast className="shrink-0 text-3xl sm:text-2xl text-purple-600"/>
                     </button>
                 )}
 
@@ -361,26 +391,35 @@ export default function App() {
                             <ul className="mt-2">
                                 {Array.isArray(source.acestream_links) && source.acestream_links.length > 0 ? (
                                     source.acestream_links.map((link, i) => (
-                                        <li key={i}
-                                            className="mt-2 flex justify-between items-center text-ellipsis overflow-hidden">
+                                        <li
+                                            key={i}
+                                            className="mt-2 flex items-center gap-2"
+                                        >
+                                            {/* Link a sinistra che trunca, prende lo spazio */}
                                             <a
                                                 href={link.link}
-                                                className="text-purple-500 hover:underline truncate"
+                                                className="flex-1 min-w-0 text-purple-500 hover:underline truncate"
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                             >
                                                 {link.language ? `${link.language} - ` : ""} {link.link}
                                             </a>
-                                            <FaCopy className="text-purple-600 cursor-pointer ml-2"
-                                                    onClick={() => handleCopy(link.link)}/>
-                                            {/* INVIA ALLA TV */}
-                                            {pairedDeviceId && (
-                                                <FaTv
-                                                    className="text-purple-600 cursor-pointer ml-2"
-                                                    onClick={() => sendToTv(link.link)}
-                                                    title="Invia alla TV collegata"
+
+                                            {/* Azioni a destra, dimensione fissa */}
+                                            <div className="flex items-center gap-2 flex-none">
+                                                <FaCopy
+                                                    className="text-purple-600 cursor-pointer shrink-0 text-xl"
+                                                    onClick={() => handleCopy(link.link)}
+                                                    title="Copia"
                                                 />
-                                            )}
+                                                {pairedDeviceId && (
+                                                    <MdCast
+                                                        className="text-purple-600 cursor-pointer shrink-0 text-xl"
+                                                        onClick={() => sendToTv(link.link)}
+                                                        title="Invia alla TV collegata"
+                                                    />
+                                                )}
+                                            </div>
                                         </li>
                                     ))
                                 ) : (
@@ -392,15 +431,31 @@ export default function App() {
                 </div>
             )}
             {showPairModal && (
-                <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center"
-                     onClick={() => setShowPairModal(false)}>
+                <div
+                    className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center pt-[20dvh] md:pt-[25dvh] lg:items-center lg:pt-0"
+                    onClick={() => setShowPairModal(false)}>
                     <div
                         className={`${darkMode ? "bg-gray-900 text-white" : "bg-white text-black"} w-[92vw] max-w-md rounded-2xl p-5`}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <h2 className="text-lg font-semibold mb-2">Collega una TV</h2>
-                        <p className="text-sm opacity-80 mb-3">
-                            Inserisci il <strong>codice a 6 cifre</strong> mostrato sulla TV (puoi anche incollarlo).
+                        <div
+                            className={`mb-4 text-center rounded-xl border ${darkMode ? "border-gray-700 bg-gray-800/60" : "border-gray-200 bg-gray-50"}
+                            p-2.5 flex flex-col items-center sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3`}
+                        >
+                            <p className="m-0 font-semibold text-lg sm:text-xl leading-tight">Collega TV</p>
+                            <a
+                                href={TV_APP_URL}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-purple-500
+                             ${darkMode ? "bg-purple-700 hover:bg-purple-600 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}
+                            >
+                                <FaGooglePlay className="text-base"/>
+                                Scarica l’app
+                            </a>
+                        </div>
+                        <p className="text-sm opacity-80 mb-3 text-center">
+                            Inserisci il <strong>codice a 6 cifre</strong>
                         </p>
 
                         <form
