@@ -323,21 +323,33 @@ export default function App() {
                 {/* Stato TV */}
                 {pairedDeviceId ? (
                     <button
-                        className="p-2 rounded-full hover:bg-purple-600/10 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        className="inline-flex items-center gap-2
+                             rounded-full md:rounded-md
+                             p-2 md:px-3 md:py-1
+                             focus:outline-none focus:ring-2 focus:ring-purple-500
+                             text-green-600 md:border md:border-green-600
+                             hover:bg-green-600/10 md:hover:bg-green-600 md:hover:text-white"
                         title={`TV collegata (${pairedDeviceId}) — clicca per scollegare`}
                         aria-label="TV collegata: scollega"
                         onClick={unpairTv}
                     >
-                        <MdCastConnected className="shrink-0 text-3xl sm:text-2xl text-green-600"/>
+                        <MdCastConnected className="shrink-0 text-3xl md:text-xl"/>
+                        <span className="hidden md:inline">TV collegata</span>
                     </button>
                 ) : (
                     <button
-                        className="p-2 rounded-full hover:bg-purple-600/10 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        title="Collega TV"
-                        aria-label="Collega TV"
+                        className="inline-flex items-center gap-2
+                             rounded-full md:rounded-md
+                             p-2 md:px-3 md:py-1
+                             focus:outline-none focus:ring-2 focus:ring-purple-500
+                             text-purple-600 md:border md:border-purple-600
+                             hover:bg-purple-600/10 md:hover:bg-purple-600 md:hover:text-white"
+                        title="Connetti TV"
+                        aria-label="Connetti TV"
                         onClick={() => setShowPairModal(true)}
                     >
-                        <MdCast className="shrink-0 text-3xl sm:text-2xl text-purple-600"/>
+                        <MdCast className="shrink-0 text-3xl md:text-xl"/>
+                        <span className="hidden md:inline">Connetti TV</span>
                     </button>
                 )}
 
