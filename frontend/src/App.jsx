@@ -319,9 +319,7 @@ export default function App() {
                         className="inline-flex items-center gap-2
                              rounded-full md:rounded-md
                              p-2 md:px-3 md:py-1
-                             focus:outline-none focus:ring-2 focus:ring-purple-500
-                             text-green-600 md:border md:border-green-600
-                             hover:bg-green-600/10 md:hover:bg-green-600 md:hover:text-white"
+                             focus:outline-none focus:ring-2  text-green-600 md:border md:border-green-600 hover:bg-green-600/10 md:hover:bg-green-600 md:hover:text-white"
                         title={`TV collegata (${pairedDeviceId}) — clicca per scollegare`}
                         aria-label="TV collegata: scollega"
                         onClick={unpairTv}
@@ -334,9 +332,7 @@ export default function App() {
                         className="inline-flex items-center gap-2
                              rounded-full md:rounded-md
                              p-2 md:px-3 md:py-1
-                             focus:outline-none focus:ring-2 focus:ring-purple-500
-                             text-purple-600 md:border md:border-purple-600
-                             hover:bg-purple-600/10 md:hover:bg-purple-600 md:hover:text-white"
+                             focus:outline-none focus:ring-2 text-purple-600 md:border md:border-purple-600 hover:bg-purple-600/10 md:hover:bg-purple-600 md:hover:text-white"
                         title="Connetti TV"
                         aria-label="Connetti TV"
                         onClick={() => setShowPairModal(true)}
@@ -452,7 +448,7 @@ export default function App() {
                                 href={TV_APP_URL}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-purple-500
+                                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition focus:outline-none focus:ring-2
                              ${darkMode ? "bg-purple-700 hover:bg-purple-600 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}
                             >
                                 <FaGooglePlay className="text-base"/>
