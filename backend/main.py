@@ -3,17 +3,22 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from secrets import token_hex
 
 import requests
 import unicodedata
 from bs4 import BeautifulSoup
 from flask import Flask, request, send_from_directory
 from flask import jsonify
-from flask_cors import CORS
 
+from auth import sign_uid
+from db import init_db
 from pair import tv_bp
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Init DB all'avvio
+init_db()
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -37,7 +42,6 @@ if not FRONTEND_DIR:
 logging.info(f"[STATIC] Uso frontend da: {FRONTEND_DIR}")
 
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
-CORS(app)  # se frontend e API sono same-origin puoi rimuoverlo
 app.register_blueprint(tv_bp)
 session = requests.Session()
 
@@ -45,6 +49,12 @@ session = requests.Session()
 @app.get("/")
 def _index():
     return send_from_directory(app.static_folder, "index.html")
+
+
+@app.post("/auth/anon")
+def auth_anon():
+    uid = "u_" + token_hex(8)
+    return jsonify({"uid": uid, "sig": sign_uid(uid)})
 
 
 @app.route('/acestream', methods=['GET'])

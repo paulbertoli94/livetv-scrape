@@ -16,6 +16,11 @@ export default defineConfig({
                 changeOrigin: true,
                 secure: false,
             },
+            "/auth": {
+                target: "http://192.168.1.10:5000",
+                changeOrigin: true,
+                secure: false,
+            },
         },
     },
 });

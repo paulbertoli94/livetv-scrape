@@ -54,6 +54,24 @@ export default function App() {
     const abortRef = useRef(null);
     const requestIdRef = useRef(0);
 
+    const authRef = useRef({uid: null, sig: null});
+
+    useEffect(() => {
+        const saved = JSON.parse(localStorage.getItem("auth") || "null");
+        if (saved?.uid && saved?.sig) {
+            authRef.current = saved;
+            return;
+        }
+        fetch("/auth/anon", {method: "POST"})
+            .then(r => r.json())
+            .then(d => {
+                authRef.current = d;
+                localStorage.setItem("auth", JSON.stringify(d));
+            })
+            .catch(() => {
+            });
+    }, []);
+
     useEffect(() => {
         if (!userId) {
             const rand = crypto.getRandomValues(new Uint32Array(4));
@@ -248,7 +266,11 @@ export default function App() {
         try {
             const res = await fetch(`${API_BASE}/tv/pair`, {
                 method: "POST",
-                headers: {"Content-Type": "application/json"},
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Auth-Uid": authRef.current?.uid || "",
+                    "X-Auth-Sig": authRef.current?.sig || ""
+                },
                 body: JSON.stringify({pairCode: code, userId})
             });
             const data = await res.json();
@@ -295,9 +317,13 @@ export default function App() {
             return;
         }
         try {
-            const res = await fetch(`${API_BASE}/tv/send?userId=${encodeURIComponent(userId)}`, {
+            const res = await fetch(`${API_BASE}/tv/send`, {
                 method: "POST",
-                headers: {"Content-Type": "application/json"},
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Auth-Uid": authRef.current?.uid || "",
+                    "X-Auth-Sig": authRef.current?.sig || ""
+                },
                 body: JSON.stringify({deviceId: pairedDeviceId, action: "acestream", cid})
             });
             const data = await res.json().catch(() => ({}));
