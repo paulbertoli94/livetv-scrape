@@ -3,7 +3,7 @@ import os, hmac, hashlib
 from functools import wraps
 from flask import request, jsonify, g
 
-SECRET = os.environ.get("AUTH_SECRET", "ZLGY3BMi5n4lwdtRGCntDjR0cDi70Z87yh8gKVavABRRS2bz5blwqiqHXOSs5Hw4ShxYV8Nlj2").encode()
+SECRET = os.environ.get("AUTH_SECRET", "dev-secret-change-me").encode()
 
 def sign_uid(uid: str) -> str:
     return hmac.new(SECRET, uid.encode(), hashlib.sha256).hexdigest()
