@@ -3,4 +3,4 @@ flask-cors
 beautifulsoup4
 requests
 fastapi
-#playwright
+gunicorn

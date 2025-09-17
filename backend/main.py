@@ -8,77 +8,74 @@ from pathlib import Path
 import requests
 import unicodedata
 from bs4 import BeautifulSoup
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, send_from_directory
+from flask import jsonify
 from flask_cors import CORS
 
 from pair import tv_bp
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
 BASE_DIR = Path(__file__).resolve().parent
 
+# 1) Trova la build Vite (dist) in locale e in docker
+CANDIDATES = [
+    BASE_DIR / "frontend" / "dist",  # docker / run dopo COPY
+    BASE_DIR.parent / "frontend" / "dist",  # sviluppo locale: ../frontend/dist
+]
+FRONTEND_DIR = None
+for p in CANDIDATES:
+    if (p / "index.html").exists():
+        FRONTEND_DIR = p.resolve()
+        break
 
-def resolve_frontend_dir() -> Path:
-    env_dir = os.getenv("FRONTEND_DIR")
-    candidates = []
-    if env_dir:
-        candidates.append(Path(env_dir))
-
-    candidates += [
-        BASE_DIR / "frontend" / "build",
-        BASE_DIR / "frontend" / "dist",
-        BASE_DIR.parent / "frontend" / "build",
-        BASE_DIR.parent / "frontend" / "dist",
-    ]
-
-    tried = []
-    for p in candidates:
-        if not p:
-            continue
-        idx = p / "index.html"
-        tried.append(str(idx))
-        if idx.exists():
-            logging.info(f"[STATIC] Uso frontend da: {p}")
-            return p.resolve()
-
-    raise FileNotFoundError(
-        "index.html non trovato. Percorsi provati:\n- " + "\n- ".join(tried) +
-        "\nSuggerimenti:\n"
-        "- Imposta la variabile d'ambiente FRONTEND_DIR verso la cartella che contiene index.html\n"
-        "- Oppure builda il frontend (es. CRA: npm run build → frontend/build)\n"
-        "- In PyCharm verifica Working Directory = cartella 'backend' (o dove sta questo file)\n"
+if not FRONTEND_DIR:
+    raise RuntimeError(
+        "index.html non trovato. Esegui la build del frontend:\n"
+        "  cd ../frontend && npm run build\n"
+        "Oppure verifica il COPY nel Dockerfile su ./frontend/dist"
     )
 
+logging.info(f"[STATIC] Uso frontend da: {FRONTEND_DIR}")
 
-FRONTEND_DIR = resolve_frontend_dir()
-
-app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
-CORS(app, resources={r"/*": {"origins": "*"}})
+# 2) Crea UNA sola app, montando gli statici alla root
+app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
+CORS(app)  # se frontend e API sono same-origin puoi rimuoverlo
 app.register_blueprint(tv_bp)
 
-# Creiamo una sessione globale per riutilizzare le connessioni
+# (facoltativo) sessione requests riutilizzabile
 session = requests.Session()
 
 
-def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2):
-    """
-    Effettua una richiesta HTTP con sessione, retry e timeout configurabili.
-    """
-    for attempt in range(retries):
-        # per ogni tentativo aumento il timeout con il delay
-        timeout = timeout + delay
-        try:
-            response = session.get(url, timeout=timeout)
-            response.raise_for_status()
-            return response
-        except requests.exceptions.RequestException as e:
-            logging.warning(f"Tentativo {attempt + 1} fallito per {url}: {e}")
-            time.sleep(delay)
-    raise requests.exceptions.RequestException(f"Impossibile ottenere una risposta da {url} dopo {retries} tentativi")
+# 3) Cache: asset hashati (Vite) = lungo; index = no-store
+@app.after_request
+def _cache_headers(resp):
+    path = (request.path or "")
+    if path.startswith("/assets/") or re.search(r"\.[a-f0-9]{8}\.", path):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path.endswith("index.html") or path == "/":
+        resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
-@app.route("/")
-def serve():
-    logging.info(f"*** Chiamata GET /path → static_folder={app.static_folder}")
+# 4) Root → index.html
+@app.get("/")
+def _index():
+    return send_from_directory(app.static_folder, "index.html")
+
+
+# 5) (opzionale) route esplicita per asset
+@app.get("/assets/<path:filename>")
+def _assets(filename):
+    return send_from_directory(os.path.join(app.static_folder, "assets"), filename)
+
+
+# 6) Fallback SPA: se il file non esiste, torna index.html
+@app.get("/<path:path>")
+def _spa_fallback(path):
+    full = os.path.join(app.static_folder, path)
+    if os.path.isfile(full):
+        return send_from_directory(app.static_folder, path)
     return send_from_directory(app.static_folder, "index.html")
 
 
@@ -109,6 +106,23 @@ def acestream_scraper():
     logging.info(f"Tempo totale per l'elaborazione della richiesta: {elapsed_time:.2f} secondi")
 
     return jsonify(result)
+
+
+def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2):
+    """
+    Effettua una richiesta HTTP con sessione, retry e timeout configurabili.
+    """
+    for attempt in range(retries):
+        # per ogni tentativo aumento il timeout con il delay
+        timeout = timeout + delay
+        try:
+            response = session.get(url, timeout=timeout)
+            response.raise_for_status()
+            return response
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Tentativo {attempt + 1} fallito per {url}: {e}")
+            time.sleep(delay)
+    raise requests.exceptions.RequestException(f"Impossibile ottenere una risposta da {url} dopo {retries} tentativi")
 
 
 def normalize_string(s):
@@ -144,7 +158,7 @@ def livetv_scraper(search_term):
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
-    base_attempt = 861
+    base_attempt = 863
     attempt = base_attempt
 
     while attempt <= base_attempt + max_attempts:

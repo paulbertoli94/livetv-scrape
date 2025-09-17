@@ -1,10 +1,11 @@
-import {useEffect, useRef, useState} from "react";
+import React, {useEffect, useRef, useState} from "react";
 import {motion} from "framer-motion";
 import {FaArrowRight, FaCopy, FaGooglePlay, FaMoon, FaSearch, FaSun} from "react-icons/fa";
 import {MdCast, MdCastConnected} from "react-icons/md";
 import Cookies from "js-cookie";
 
 const TV_APP_URL = "https://play.google.com/store/apps/details?id=com.acetvpair";
+const API_BASE = import.meta.env.VITE_API_URL || ""
 
 export default function App() {
     const [searchTerm, setSearchTerm] = useState("");
@@ -43,27 +44,15 @@ export default function App() {
     };
 
     useEffect(() => {
-        if (showPairModal) {
-            setPairError("");
-            resetDigits();
-        }
-    }, [showPairModal]);
-
-    // quando apro la modale: reset e focus sul primo
-    useEffect(() => {
-        if (showPairModal) {
-            const empty = Array(DIGITS).fill("");
-            setDigitsAndPairCode(empty);
-            setTimeout(() => digitRefs.current[0]?.focus(), 0);
-        }
+        if (!showPairModal) return;
+        setPairError("");
+        resetDigits(); // resetDigits già setta cifre vuote e focus sul primo
     }, [showPairModal]);
 
     // userId locale (solo per demo/back-end semplice)
     const [userId, setUserId] = useState(() => Cookies.get("userId") || null);
     const abortRef = useRef(null);
     const requestIdRef = useRef(0);
-
-    const BASE_URL = process.env.NODE_ENV === "development" ? "http://localhost:5000" : "";
 
     useEffect(() => {
         if (!userId) {
@@ -188,7 +177,8 @@ export default function App() {
 
         // annullo eventuale fetch precedente
         if (abortRef.current) abortRef.current.abort();
-        abortRef.current = new AbortController();
+        const controller = new AbortController();
+        abortRef.current = controller;
 
         setLoading(true);
         setError(null);
@@ -208,7 +198,10 @@ export default function App() {
         }
 
         try {
-            const response = await fetch(`${BASE_URL}/acestream?term=${encodeURIComponent(searchTerm)}`);
+            const response = await fetch(`${API_BASE}/acestream?term=${encodeURIComponent(searchTerm)}`, {
+                signal: controller.signal,
+                cache: "no-store"
+            });
             const data = await response.json();
             if (thisReqId !== requestIdRef.current) return;
             setResults(data);
@@ -253,7 +246,7 @@ export default function App() {
         setIsSubmitting(true);
         setPairError("");
         try {
-            const res = await fetch(`${BASE_URL}/tv/pair`, {
+            const res = await fetch(`${API_BASE}/tv/pair`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({pairCode: code, userId})
@@ -302,7 +295,7 @@ export default function App() {
             return;
         }
         try {
-            const res = await fetch(`${BASE_URL}/tv/send?userId=${encodeURIComponent(userId)}`, {
+            const res = await fetch(`${API_BASE}/tv/send?userId=${encodeURIComponent(userId)}`, {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
                 body: JSON.stringify({deviceId: pairedDeviceId, action: "acestream", cid})
