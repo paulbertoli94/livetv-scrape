@@ -139,27 +139,3 @@ def upsert_user_and_device(session, user_id: str, device_id: str):
     d = ensure_device(session, device_id)
     d.user_id = user_id
     d.last_seen = datetime.utcnow()
-
-
-def put_inbox(session, device_id: str, action: str, cid: str | None, url: str | None, ttl_seconds: int = 300):
-    session.merge(Inbox(
-        device_id=device_id,
-        action=action,
-        cid=cid,
-        url=url,
-        expires_at=datetime.utcnow() + timedelta(seconds=ttl_seconds)
-    ))
-
-
-def pop_inbox(session, device_id: str):
-    rec = session.get(Inbox, device_id)
-    if not rec:
-        return None
-    from datetime import datetime as _dt
-    if rec.expires_at < _dt.utcnow():
-        session.delete(rec)
-        return None
-    # consumiamo
-    payload = {"action": rec.action, "cid": rec.cid, "url": rec.url}
-    session.delete(rec)
-    return payload

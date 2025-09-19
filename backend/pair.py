@@ -1,19 +1,20 @@
 # backend/pair.py
 import logging
+from secrets import token_hex, randbelow
 
 from flask import Blueprint, request, jsonify, g
-from secrets import token_hex, randbelow
+
 from auth import require_auth_lite
 from db import (
     db_session, save_pairing_code, consume_pairing_code,
-    upsert_user_and_device, ensure_device, put_inbox, pop_inbox, set_fcm_token
+    upsert_user_and_device, ensure_device, set_fcm_token
 )
 from fcm import send_to_token
 
 tv_bp = Blueprint("tv", __name__)
 
-PAIR_TTL  = 180
-INBOX_TTL = 300
+PAIR_TTL = 180
+
 
 @tv_bp.post("/tv/token")
 def tv_token():
@@ -22,9 +23,9 @@ def tv_token():
     Auth: header X-Device-Id / X-Device-Key
     Body: { "token": "<fcm_token>" }
     """
-    dev_id  = (request.headers.get("X-Device-Id") or "").strip()
+    dev_id = (request.headers.get("X-Device-Id") or "").strip()
     dev_key = (request.headers.get("X-Device-Key") or "").strip()
-    token   = (request.json or {}).get("token", "").strip()
+    token = (request.json or {}).get("token", "").strip()
     if not dev_id or not dev_key or not token:
         return jsonify({"detail": "Auth o token mancanti"}), 400
 
@@ -32,21 +33,22 @@ def tv_token():
     with db_session() as s:
         d = s.get(Device, dev_id)
         if not d or not d.secret_key or d.secret_key != dev_key:
-            return jsonify({"detail":"Device auth failed"}), 401
+            return jsonify({"detail": "Device auth failed"}), 401
         set_fcm_token(s, dev_id, token)
         d2 = s.get(Device, dev_id)
         ok_saved = bool(d2 and d2.fcm_token)
         logging.log(logging.INFO, f"ok_saved: {d2.fcm_token} with devicId: {dev_id}")
         return jsonify({"ok": ok_saved, "savedTokenLen": len(d2.fcm_token) if ok_saved else 0})
 
+
 @tv_bp.post("/tv/send")
 @require_auth_lite
 def tv_send():
-    data      = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True) or {}
     device_id = (data.get("deviceId") or "").strip()
-    action    = (data.get("action") or "").strip()
-    cid       = data.get("cid")
-    url       = data.get("url")
+    action = (data.get("action") or "").strip()
+    cid = data.get("cid")
+    url = data.get("url")
 
     if not device_id:
         return jsonify({"detail": "deviceId mancante"}), 400
@@ -75,15 +77,36 @@ def tv_send():
                 return jsonify({"ok": True, "via": "inbox", "note": "FCM fallito"}), 202
         return jsonify({"ok": True, "via": "inbox"})
 
+
 @tv_bp.post("/tv/register")
 def tv_register():
-    device_id  = token_hex(8)
+    device_id = token_hex(8)
     device_key = token_hex(32)
-    code       = f"{randbelow(10**6):06d}"
+    code = f"{randbelow(10 ** 6):06d}"
     with db_session() as s:
         ensure_device(s, device_id, secret_key=device_key)
         save_pairing_code(s, code, device_id, ttl_seconds=PAIR_TTL)
-    return jsonify({"deviceId": device_id, "deviceKey": device_key, "pairCode": code, "expiresIn": PAIR_TTL})
+        return jsonify({"deviceId": device_id, "deviceKey": device_key, "pairCode": code, "expiresIn": PAIR_TTL})
+
+
+@tv_bp.post("/tv/code")
+def tv_token():
+    device_id = (request.headers.get("X-Device-Id") or "").strip()
+    device_key = (request.headers.get("X-Device-Key") or "").strip()
+    token = (request.json or {}).get("token", "").strip()
+    code = f"{randbelow(10 ** 6):06d}"
+    if not device_id or not device_key or not token:
+        return jsonify({"detail": "Auth o token mancanti"}), 400
+
+    from db import Device
+    with db_session() as s:
+        d = s.get(Device, device_id)
+        if not d or not d.secret_key or d.secret_key != device_key:
+            return jsonify({"detail": "Device auth failed"}), 401
+        ensure_device(s, device_id, secret_key=device_key)
+        save_pairing_code(s, code, device_id, ttl_seconds=PAIR_TTL)
+        return jsonify({"deviceId": device_id, "deviceKey": device_key, "pairCode": code, "expiresIn": PAIR_TTL})
+
 
 @tv_bp.post("/tv/pair")
 @require_auth_lite
@@ -98,19 +121,3 @@ def tv_pair():
             return jsonify({"detail": "Codice non valido o scaduto"}), 400
         upsert_user_and_device(s, g.user_id, device_id)
     return jsonify({"ok": True, "deviceId": device_id})
-
-@tv_bp.get("/tv/inbox")
-def tv_inbox():
-    # resta uguale: TV usa X-Device-Id / X-Device-Key
-    device_id_q = (request.args.get("deviceId") or "").strip()
-    dev_id_h  = (request.headers.get("X-Device-Id") or "").strip()
-    dev_key_h = (request.headers.get("X-Device-Key") or "").strip()
-    if not device_id_q or dev_id_h != device_id_q:
-        return jsonify({"detail": "deviceId mancante o mismatch"}), 401
-    from db import Device
-    with db_session() as s:
-        d = s.get(Device, dev_id_h)
-        if not d or not d.secret_key or d.secret_key != dev_key_h:
-            return jsonify({"detail": "Device auth failed"}), 401
-        msg = pop_inbox(s, device_id_q)
-        return jsonify(msg or {})
