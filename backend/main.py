@@ -58,7 +58,7 @@ def auth_anon():
 
 
 @app.route('/acestream', methods=['GET'])
-def acestream_scraper():
+def acestream():
     logging.info(f"Ricevuta richiesta con termine di ricerca: {request.args.get('term')}")
 
     result = []
@@ -72,7 +72,7 @@ def acestream_scraper():
     start_time = time.time()
 
     with ThreadPoolExecutor() as executor:
-        future_livetv = executor.submit(livetv_scraper, search_term)
+        future_livetv = executor.submit(acestream_scraper, search_term)
         future_platinsport = executor.submit(platinsport_scraper, search_term)
 
         result = [
@@ -123,7 +123,7 @@ def test_link(search_term):
         ])
 
 
-def livetv_scraper(search_term):
+def acestream_scraper(search_term):
     replacements = {
         "f1": "formula 1",
         "motogp": "moto gp"
