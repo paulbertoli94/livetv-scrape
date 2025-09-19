@@ -120,4 +120,4 @@ def tv_pair():
         if not device_id:
             return jsonify({"detail": "Codice non valido o scaduto"}), 400
         upsert_user_and_device(s, g.user_id, device_id)
-    return jsonify({"ok": True, "deviceId": device_id})
+        return jsonify({"ok": True, "deviceId": device_id})
