@@ -1,7 +1,8 @@
 # backend/db.py
+import logging
 import os
-from datetime import datetime, timedelta
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 
 from sqlalchemy import create_engine, String, DateTime, ForeignKey, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -20,6 +21,7 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 class Base(DeclarativeBase):
@@ -38,6 +40,8 @@ class Device(Base):
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     secret_key: Mapped[str | None] = mapped_column(String, nullable=True)
     last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    fcm_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    fcm_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PairingCode(Base):
@@ -54,7 +58,7 @@ class Inbox(Base):
     """
     __tablename__ = "inbox"
     device_id: Mapped[str] = mapped_column(String, primary_key=True)
-    action: Mapped[str] = mapped_column(String, nullable=False)     # "acestream" | "playUrl" ...
+    action: Mapped[str] = mapped_column(String, nullable=False)  # "acestream" | "playUrl" ...
     cid: Mapped[str | None] = mapped_column(String, nullable=True)
     url: Mapped[str | None] = mapped_column(String, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -62,12 +66,24 @@ class Inbox(Base):
 
 def init_db():
     Base.metadata.create_all(engine)
-    # ottimizzazioni SQLite
     if DATABASE_URL.startswith("sqlite"):
         with engine.begin() as conn:
             conn.exec_driver_sql("PRAGMA journal_mode=WAL;")
             conn.exec_driver_sql("PRAGMA synchronous=NORMAL;")
             conn.exec_driver_sql("PRAGMA busy_timeout=5000;")
+            # 👇 mini-migration idempotente per colonne nuove
+            # cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(devices);")]
+            # if "fcm_token" not in cols:
+            #    conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN fcm_token TEXT;")
+            # if "fcm_updated_at" not in cols:
+            #    conn.exec_driver_sql("ALTER TABLE devices ADD COLUMN fcm_updated_at DATETIME;")
+
+
+def set_fcm_token(session, device_id: str, token: str):
+    d = ensure_device(session, device_id)
+    d.fcm_token = token
+    d.fcm_updated_at = datetime.utcnow()
+    return d
 
 
 @contextmanager
@@ -92,6 +108,7 @@ def save_pairing_code(session, code: str, device_id: str, ttl_seconds: int = 300
         expires_at=datetime.utcnow() + timedelta(seconds=ttl_seconds)
     ))
 
+
 def consume_pairing_code(session, code: str) -> str | None:
     pc = session.get(PairingCode, code)
     if not pc:
@@ -102,6 +119,7 @@ def consume_pairing_code(session, code: str) -> str | None:
     device_id = pc.device_id
     session.delete(pc)
     return device_id
+
 
 def ensure_device(session, device_id: str, secret_key: str | None = None):
     d = session.get(Device, device_id)
@@ -114,12 +132,14 @@ def ensure_device(session, device_id: str, secret_key: str | None = None):
     d.last_seen = datetime.utcnow()
     return d
 
+
 def upsert_user_and_device(session, user_id: str, device_id: str):
     if not session.get(User, user_id):
         session.add(User(id=user_id))
     d = ensure_device(session, device_id)
     d.user_id = user_id
     d.last_seen = datetime.utcnow()
+
 
 def put_inbox(session, device_id: str, action: str, cid: str | None, url: str | None, ttl_seconds: int = 300):
     session.merge(Inbox(
@@ -129,6 +149,7 @@ def put_inbox(session, device_id: str, action: str, cid: str | None, url: str | 
         url=url,
         expires_at=datetime.utcnow() + timedelta(seconds=ttl_seconds)
     ))
+
 
 def pop_inbox(session, device_id: str):
     rec = session.get(Inbox, device_id)
