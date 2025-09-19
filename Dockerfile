@@ -36,4 +36,4 @@ RUN mkdir -p /usr/src/data
 ENV DATA_DIR=/usr/src/data
 
 EXPOSE 5000
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "main:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "main:app"]
