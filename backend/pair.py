@@ -90,12 +90,11 @@ def tv_register():
 
 
 @tv_bp.post("/tv/code")
-def tv_token():
+def tv_code():
     device_id = (request.headers.get("X-Device-Id") or "").strip()
     device_key = (request.headers.get("X-Device-Key") or "").strip()
-    token = (request.json or {}).get("token", "").strip()
     code = f"{randbelow(10 ** 6):06d}"
-    if not device_id or not device_key or not token:
+    if not device_id or not device_key:
         return jsonify({"detail": "Auth o token mancanti"}), 400
 
     from db import Device
