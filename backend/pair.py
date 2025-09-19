@@ -66,6 +66,7 @@ def tv_send():
         if not d or d.user_id != g.user_id:
             return jsonify({"detail": "Questa TV non è tua"}), 403
         # 🔔 INVIO FCM (data-only)
+        logging.log(logging.INFO, f"device fcmToken: {d.fcm_token}")
         if d.fcm_token:
             payload = {"action": action}
             if cid: payload["cid"] = cid
