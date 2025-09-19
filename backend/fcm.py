@@ -12,7 +12,7 @@ def _get_access_token():
     if _FCM_TOKEN_CACHE["token"] and now < _FCM_TOKEN_CACHE["exp"] - 60:
         return _FCM_TOKEN_CACHE["token"]
     creds = service_account.Credentials.from_service_account_file(
-        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "./service-account.json"), scopes=SCOPES
+        os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "../service-account.json"), scopes=SCOPES
     )
     creds.refresh(Request())
     _FCM_TOKEN_CACHE["token"] = creds.token

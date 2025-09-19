@@ -12,4 +12,4 @@ __pycache__/
 .idea/
 *.iml
 .vscode/
-backend/service-account.json
+service-account.json
