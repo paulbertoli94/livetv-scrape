@@ -31,6 +31,7 @@
     "@vitejs/plugin-react": "^5.0.3",
     "autoprefixer": "^10.4.13",
     "postcss": "^8.4.21",
-    "vite": "^7.1.5"
+    "vite": "^7.1.5",
+    "vite-plugin-pwa": "^1.0.3"
   }
 }

@@ -230,6 +230,7 @@ export default function App() {
             setFirstSearchDone(true);
             // Rimuovo il focus dall'input solo in caso di successo
             if (window.innerWidth < 768) {
+                setBarPosition(prev => (prev === 0 ? 0.001 : 0));
                 inputRef.current?.blur();
             }
         } catch (err) {

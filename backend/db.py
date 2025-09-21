@@ -51,17 +51,10 @@ class PairingCode(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
-class Inbox(Base):
-    """
-    Un solo messaggio 'corrente' per device (chiave = device_id).
-    Se vuoi storico, aggiungi un id autoincrementale invece di usare device_id come PK.
-    """
-    __tablename__ = "inbox"
-    device_id: Mapped[str] = mapped_column(String, primary_key=True)
-    action: Mapped[str] = mapped_column(String, nullable=False)  # "acestream" | "playUrl" ...
-    cid: Mapped[str | None] = mapped_column(String, nullable=True)
-    url: Mapped[str | None] = mapped_column(String, nullable=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+class DeviceUser(Base):
+    __tablename__ = "device_users"
+    device_id: Mapped[str] = mapped_column(ForeignKey("devices.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
 
 
 def init_db():
@@ -133,9 +126,29 @@ def ensure_device(session, device_id: str, secret_key: str | None = None):
     return d
 
 
-def upsert_user_and_device(session, user_id: str, device_id: str):
+def link_user_device(session, user_id: str, device_id: str):
+    # idempotente: crea utente, device e legame se mancano
     if not session.get(User, user_id):
         session.add(User(id=user_id))
-    d = ensure_device(session, device_id)
-    d.user_id = user_id
-    d.last_seen = datetime.utcnow()
+    ensure_device(session, device_id)
+    session.merge(DeviceUser(device_id=device_id, user_id=user_id))
+
+
+def user_has_access(session, user_id: str, device_id: str) -> bool:
+    return session.get(DeviceUser, {"device_id": device_id, "user_id": user_id})
+
+def list_users_for_device(session, device_id: str) -> list[str]:
+    from sqlalchemy import select
+    from db import DeviceUser  # o import diretto se nello stesso file
+    rows = session.execute(
+        select(DeviceUser.user_id).where(DeviceUser.device_id == device_id)
+    ).scalars().all()
+    return rows
+
+def unlink_user_device(session, user_id: str, device_id: str) -> bool:
+    from db import DeviceUser
+    du = session.get(DeviceUser, {"device_id": device_id, "user_id": user_id})
+    if not du:
+        return False
+    session.delete(du)
+    return True

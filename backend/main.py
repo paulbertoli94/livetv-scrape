@@ -62,7 +62,8 @@ def acestream():
     logging.info(f"Ricevuta richiesta con termine di ricerca: {request.args.get('term')}")
 
     result = []
-    search_term = request.args.get('term')
+    raw_term = request.args.get('term', '')
+    search_term = ' '.join(raw_term.split())
     if not search_term:
         logging.error("Parametro 'term' mancante")
         return jsonify({"error": "Parameter 'term' is required"}), 400
