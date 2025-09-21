@@ -181,6 +181,31 @@ def tv_pair():
         return jsonify({"ok": True, "deviceId": device_id})
 
 
+@tv_bp.get("/tv/status")
+@require_auth_lite
+def tv_status():
+    device_id = (request.args.get("deviceId") or "").strip()
+    if not device_id:
+        return jsonify({"detail": "deviceId mancante"}), 400
+    from db import Device
+    with db_session() as s:
+        d = s.get(Device, device_id)
+        if not d:
+            return jsonify({"detail": "Device inesistente"}), 404
+        if not user_has_access(s, g.user_id, device_id):
+            return jsonify({"detail": "Questa TV non è tra i tuoi dispositivi"}), 403
+        #now = datetime.utcnow()
+        #delta = (now - (d.last_seen or now)).total_seconds()
+        #ONLINE_WINDOW = 180  # sec
+        return jsonify({
+            "deviceId": d.id,
+            "paired": True,
+            #"status": "online" if delta < ONLINE_WINDOW else "idle",
+            "hasFcmToken": bool(d.fcm_token),
+            "lastSeen": d.last_seen.isoformat() if d.last_seen else None,
+        })
+
+
 @tv_bp.get("/tv/linked-users")
 def tv_linked_users():
     dev_id, err = _require_device_auth()

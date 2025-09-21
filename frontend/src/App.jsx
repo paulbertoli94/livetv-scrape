@@ -116,6 +116,69 @@ export default function App() {
         }
     }, [loading]);
 
+    // funzione condivisa per verificare se il device nel cookie è ancora paired
+    const checkPaired = React.useCallback(async ({signal} = {}) => {
+        const id = Cookies.get("pairedDeviceId");
+        if (!id) {
+            setPairedDeviceId(null);
+            return false;
+        }
+
+        // aspetta che authRef sia pronto (uid/sig da /auth/anon), max ~5s
+        for (let i = 0; i < 50 && !authRef.current?.uid; i++) {
+            await new Promise(r => setTimeout(r, 100));
+            if (signal?.aborted) return false;
+        }
+        const {uid, sig} = authRef.current || {};
+        if (!uid || !sig || signal?.aborted) return false;
+
+        try {
+            const r = await fetch(`${API_BASE}/tv/status?deviceId=${encodeURIComponent(id)}`, {
+                headers: {"X-Auth-Uid": uid, "X-Auth-Sig": sig},
+                cache: "no-store",
+                signal
+            });
+
+            if (signal?.aborted) return false;
+
+            if (r.ok) {
+                setPairedDeviceId(id);   // è ancora valido
+                return true;
+            }
+            const isJson = r.headers.get("content-type")?.includes("application/json");
+            if (isJson && (r.status === 403 || r.status === 404)) {
+                // non più tuo / inesistente → pulisci
+                Cookies.remove("pairedDeviceId");
+                setPairedDeviceId(null);
+                return false;
+            }
+            // per altri status/errore rete: non tocco il cookie
+        } catch {
+            // rete/timeout: ignora, ritenteremo più tardi
+        }
+        return !!Cookies.get("pairedDeviceId");
+    }, []);
+
+    useEffect(() => {
+        const ctrl = new AbortController();
+        checkPaired({signal: ctrl.signal});  // run on mount
+        return () => ctrl.abort();
+    }, [checkPaired]);
+
+    useEffect(() => {
+        const ctrl = new AbortController();
+        const onVis = () => {
+            if (!document.hidden) {
+                checkPaired({signal: ctrl.signal});
+            }
+        };
+        document.addEventListener("visibilitychange", onVis);
+        return () => {
+            document.removeEventListener("visibilitychange", onVis);
+            ctrl.abort();
+        };
+    }, [checkPaired]);
+
     const handleDigitChange = (idx, e) => {
         if (isSubmitting) return;
         setPairError("");
@@ -328,6 +391,12 @@ export default function App() {
                 body: JSON.stringify({deviceId: pairedDeviceId, action: "acestream", cid})
             });
             const data = await res.json().catch(() => ({}));
+            const isJson = res.headers.get("content-type")?.includes("application/json");
+            if (isJson && (res.status === 403 || res.status === 404)) {
+                Cookies.remove("pairedDeviceId");
+                setPairedDeviceId(null);
+                return false;
+            }
             if (!res.ok) throw new Error(data.detail || "Invio fallito");
             // feedback semplice
             alert("Inviato alla TV!");
