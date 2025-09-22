@@ -231,7 +231,7 @@ def acestream_scraper(search_term):
 
                         language = None
                         if language_img and language_img.has_attr('title'):
-                            language = (language_img['title'] or '').strip() or None  # "" -> None
+                            language = (language_img['title'] or '').strip() or None
 
                         if not language and language_img and language_img.has_attr('src'):
                             m = re.search(r'/linkflag/(\d+)\.png', language_img['src'])
@@ -243,7 +243,7 @@ def acestream_scraper(search_term):
 
                         acestream_links.append({
                             "link": link['href'],
-                            "language": language,
+                            "language": language.capitalize() if language else None,
                             "bitrate": bitrate
                         })
 

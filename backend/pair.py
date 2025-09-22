@@ -1,6 +1,8 @@
 # backend/pair.py
 import logging
-from secrets import token_hex, randbelow
+import threading
+import time
+from secrets import token_hex, randbelow  # già importato
 
 from flask import Blueprint, request, jsonify, g
 
@@ -14,6 +16,36 @@ from fcm import send_to_token
 tv_bp = Blueprint("tv", __name__)
 
 PAIR_TTL = 180
+
+_PENDING = {}
+_PENDING_LOCK = threading.Lock()
+
+
+def _put_pending(cmd_id, device_id):
+    with _PENDING_LOCK:
+        _PENDING[cmd_id] = {"device_id": device_id, "ack": False, "ts": time.time()}
+        # GC semplice (2 minuti)
+        cutoff = time.time() - 120
+        for k, v in list(_PENDING.items()):
+            if v["ts"] < cutoff:
+                _PENDING.pop(k, None)
+
+
+def _mark_ack(cmd_id, device_id=None):
+    with _PENDING_LOCK:
+        info = _PENDING.get(cmd_id)
+        if not info:
+            return False
+        if device_id and info["device_id"] != device_id:
+            return False
+        info["ack"] = True
+        info["ts_ack"] = time.time()
+        return True
+
+
+def _is_acked(cmd_id):
+    with _PENDING_LOCK:
+        return bool(_PENDING.get(cmd_id, {}).get("ack"))
 
 
 def _require_device_auth():
@@ -55,11 +87,23 @@ def tv_token():
 @tv_bp.post("/tv/send")
 @require_auth_lite
 def tv_send():
+    """
+    Invia un comando alla TV via FCM e attende brevemente un ACK.
+    Risposte:
+      - 200 {"status":"delivered","cmdId": "..."}        → consegnato e ack ricevuto
+      - 202 {"status":"queued_no_ack","cmdId":"..."}      → inviato ma nessun ack rapido
+      - 202 {"status":"deferred_no_token"}                → device senza token FCM
+      - 202 {"status":"deferred_fcm_fail"}                → invio a FCM fallito
+      - 403 {"detail":"Questa TV non è tra i tuoi dispositivi"}
+      - 404 {"detail":"Device inesistente"}
+    """
+    import time
+
     data = request.get_json(silent=True) or {}
     device_id = (data.get("deviceId") or "").strip()
     action = (data.get("action") or "").strip()
-    cid = (data.get("cid") or None)
-    url = (data.get("url") or None)
+    cid = data.get("cid") or None
+    url = data.get("url") or None
 
     # Validazioni base
     if not device_id:
@@ -91,38 +135,42 @@ def tv_send():
             logging.info(f"[tv_send] access denied for user={g.user_id} on device={device_id}")
             return jsonify({"detail": "Questa TV non è tra i tuoi dispositivi"}), 403
 
-        # FCM delivery
-        logging.info(f"[tv_send] fcmToken present={bool(d.fcm_token)}")
+        # Nessun token FCM salvato → il FE può tentare il wake via Cast e poi ritentare
         if not d.fcm_token:
-            # Nessun token: non posso consegnare ora
-            return jsonify({
-                "ok": False,
-                "via": "none",
-                "note": "Nessun FCM token registrato sul device"
-            }), 202
+            logging.info(f"[tv_send] no FCM token for device={device_id}")
+            return jsonify({"detail": "No FCM token for device"}), 403
 
-        payload = {"action": action}
-        if cid: payload["cid"] = str(cid)
-        if url: payload["url"] = str(url)
+        # Prepara comando + tracking ACK
+        cmd_id = token_hex(8)
+        _put_pending(cmd_id, device_id)
 
+        payload = {"action": action, "cmdId": cmd_id}
+        if action == "acestream":
+            payload["cid"] = cid
+        elif action == "playUrl":
+            payload["url"] = url
+
+        # Invio FCM
         try:
             send_to_token(d.fcm_token, payload)
-            return jsonify({"ok": True, "via": "fcm"})
-        except Exception as e:
-            err = str(e)
-            logging.warning(f"[tv_send] FCM failed for device={device_id}: {err}")
+        except Exception:
+            logging.exception("[tv_send] FCM send error")
+            # pulizia best-effort
+            with _PENDING_LOCK:
+                _PENDING.pop(cmd_id, None)
+            return jsonify({"status": "deferred_fcm_fail"}), 202
 
-            # Heuristica: token non valido -> invalida a DB per forzare re-registrazione
-            if "UNREGISTERED" in err or "INVALID_ARGUMENT" in err:
-                d.fcm_token = None
-                # opzionale: registra timestamp di update se vuoi
-                # d.fcm_updated_at = datetime.utcnow()
+        # Attendi breve ACK (~1.5s)
+        deadline = time.time() + 1.5
+        while time.time() < deadline:
+            if _is_acked(cmd_id):
+                with _PENDING_LOCK:
+                    _PENDING.pop(cmd_id, None)
+                return jsonify({"status": "delivered", "cmdId": cmd_id}), 200
+            time.sleep(0.05)
 
-            return jsonify({
-                "ok": False,
-                "via": "none",
-                "note": "Invio FCM fallito"
-            }), 202
+        # Nessun ACK rapido → lascia al FE il fallback (Cast + retry)
+        return jsonify({"status": "queued_no_ack", "cmdId": cmd_id}), 202
 
 
 @tv_bp.post("/tv/register")
@@ -194,13 +242,13 @@ def tv_status():
             return jsonify({"detail": "Device inesistente"}), 404
         if not user_has_access(s, g.user_id, device_id):
             return jsonify({"detail": "Questa TV non è tra i tuoi dispositivi"}), 403
-        #now = datetime.utcnow()
-        #delta = (now - (d.last_seen or now)).total_seconds()
-        #ONLINE_WINDOW = 180  # sec
+        # now = datetime.utcnow()
+        # delta = (now - (d.last_seen or now)).total_seconds()
+        # ONLINE_WINDOW = 180  # sec
         return jsonify({
             "deviceId": d.id,
             "paired": True,
-            #"status": "online" if delta < ONLINE_WINDOW else "idle",
+            # "status": "online" if delta < ONLINE_WINDOW else "idle",
             "hasFcmToken": bool(d.fcm_token),
             "lastSeen": d.last_seen.isoformat() if d.last_seen else None,
         })
@@ -222,3 +270,17 @@ def tv_unlink_user(user_id):
     with db_session() as s:
         ok = unlink_user_device(s, user_id, dev_id)
         return jsonify({"ok": ok, "deviceId": dev_id, "userId": user_id})
+
+
+@tv_bp.post("/tv/ack")
+def tv_ack():
+    # la TV si autentica con X-Device-Id / X-Device-Key
+    dev_id, err = _require_device_auth()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    cmd_id = (data.get("cmdId") or "").strip()
+    if not cmd_id:
+        return jsonify({"detail": "cmdId mancante"}), 400
+    ok = _mark_ack(cmd_id, device_id=dev_id)
+    return jsonify({"ok": ok, "cmdId": cmd_id})

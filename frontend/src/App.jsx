@@ -56,8 +56,45 @@ export default function App() {
 
     const authRef = useRef({uid: null, sig: null});
 
-    // --- Cast init once ---
+    // --- TOASTS ---
+    const [toasts, setToasts] = useState([]);
+    const toastIdRef = useRef(0);
+    const showToast = (message, variant = "info") => {
+        const id = ++toastIdRef.current;
+        setToasts(t => [...t, {id, message, variant}]);
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2600);
+    };
+    const toastClass = (v) =>
+        v === "success" ? "bg-green-600" :
+            v === "error" ? "bg-red-600" :
+                v === "warn" ? "bg-amber-600" : "bg-gray-800";
+
+    // --- CONFIRM MODAL ---
+    // Nota: onConfirm (opzionale) viene eseguito *nel click del bottone OK* (→ user gesture)
+    const [confirmState, setConfirmState] = useState({open: false, text: "", onConfirm: null, resolve: null});
+    const askConfirm = (text, onConfirm) => new Promise((resolve) => {
+        setConfirmState({open: true, text, onConfirm, resolve});
+    });
+    const handleConfirmClose = (ans) => {
+        // se ans === true, prima eseguo l’azione “gesture-safe” (es. openCastChooser)
+        if (ans === true && typeof confirmState.onConfirm === "function") {
+            try {
+                confirmState.onConfirm();
+            } catch {
+            }
+        }
+        confirmState.resolve?.(!!ans);
+        setConfirmState({open: false, text: "", onConfirm: null, resolve: null});
+    };
+
+    // --- Cast wake management ---
     const castInitRef = useRef(false);
+    const openedByUsRef = useRef(false);
+    const [autoWakeCast, setAutoWakeCast] = useState(() => Cookies.get("autoWakeCast") === "true");
+
+    useEffect(() => {
+        Cookies.set("autoWakeCast", String(autoWakeCast), {expires: 365});
+    }, [autoWakeCast]);
 
     const initCastContextOnce = () => {
         try {
@@ -69,41 +106,70 @@ export default function App() {
                     autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
                     language: "it",
                 });
-                // opzionale: event listeners di debug
+                castInitRef.current = true;
+                // opzionale: log
                 ctx.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, (e) =>
                     console.log("[Cast] state:", e.castState)
                 );
                 ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, (e) =>
                     console.log("[Cast] session:", e.sessionState)
                 );
-                castInitRef.current = true;
-                console.log("[Cast] options set");
             }
             return true;
-        } catch (e) {
-            console.warn("[Cast] init fail:", e);
+        } catch {
             return false;
         }
     };
 
-    // Init Google Cast SDK (robusto anche se lo script si carica prima dell'effetto)
+    // attende che ci sia una sessione Cast attiva (TV accesa/receiver pronto)
+    const waitForCastReady = (timeoutMs = 8000) => new Promise((resolve) => {
+        try {
+            if (!(window.cast && cast.framework)) return resolve(false);
+            const ctx = cast.framework.CastContext.getInstance();
+            // già connessi
+            if (ctx.getCurrentSession()) return resolve(true);
+
+            let done = false;
+            const cleanup = (val) => {
+                if (done) return;
+                done = true;
+                ctx.removeEventListener(
+                    cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+                    onState
+                );
+                resolve(val);
+            };
+            const onState = (e) => {
+                if (e.sessionState === cast.framework.SessionState.SESSION_STARTED ||
+                    e.sessionState === cast.framework.SessionState.SESSION_RESUMED) {
+                    // pronto
+                    cleanup(true);
+                } else if (e.sessionState === cast.framework.SessionState.SESSION_START_FAILED ||
+                    e.sessionState === cast.framework.SessionState.SESSION_ENDED) {
+                    cleanup(false);
+                }
+            };
+
+            ctx.addEventListener(
+                cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+                onState
+            );
+            setTimeout(() => cleanup(!!ctx.getCurrentSession()), timeoutMs);
+        } catch {
+            resolve(false);
+        }
+    });
+
+    // callback loader + fallback polling (sostituisci il tuo useEffect di init)
     useEffect(() => {
-        // il loader chiamerà questa, ma se arriva prima del mount usiamo anche un polling sotto
-        window.__onGCastApiAvailable = function (isAvailable) {
+        window.__onGCastApiAvailable = (isAvailable) => {
             if (!isAvailable) return;
             initCastContextOnce();
         };
-
-        // fallback: prova a inizializzare per qualche secondo nel caso il callback sia già passato
         let tries = 0;
         const t = setInterval(() => {
-            if (initCastContextOnce()) {
-                clearInterval(t);
-            } else if (++tries > 50) {
-                clearInterval(t);
-            } // ~10s @ 200ms
+            if (initCastContextOnce() || ++tries > 50) clearInterval(t); // ~10s
         }, 200);
-
         return () => clearInterval(t);
     }, []);
 
@@ -420,36 +486,51 @@ export default function App() {
         return null;
     };
 
-    // deve essere chiamato dentro un gesto utente (onClick)
-    const nudgeCastImmediate = () => {
+    // apre il chooser (gesto utente!) e ricorda se l'abbiamo aperta noi
+    const openCastChooser = () => {
         try {
-            if (!initCastContextOnce()) {
-                console.warn("[Cast] options non pronte");
-                return;
-            }
-            // nessun await qui: preserva il gesture context
-            const p = cast.framework.CastContext.getInstance().requestSession();
-            if (p && typeof p.catch === "function") {
-                p.catch(err => console.warn("[Cast] requestSession error:", err?.code || err?.message || err));
-            }
-        } catch (e) {
-            console.warn("[Cast] nudge error:", e);
+            if (!initCastContextOnce()) return false;
+            const ctx = cast.framework.CastContext.getInstance();
+            openedByUsRef.current = !ctx.getCurrentSession(); // se non c'era, l'apriremo noi
+            const p = ctx.requestSession();
+            if (p && p.catch) p.catch(() => {
+                openedByUsRef.current = false;
+            });
+            return true;
+        } catch {
+            return false;
         }
     };
 
-    // invio comando alla TV (apre AceStream con CID)
+    // chiudi la sessione solo se l'abbiamo aperta noi (dopo breve delay per il CEC)
+    const endCastIfOpenedByUs = (delay = 1500) => {
+        if (!openedByUsRef.current) return;
+        setTimeout(() => {
+            try {
+                const s = cast.framework.CastContext.getInstance().getCurrentSession();
+                if (s) s.endSession(true);
+            } catch {
+            }
+            openedByUsRef.current = false;
+        }, delay);
+    };
+
+
+    // invio comando alla TV: 1° giro senza Cast; se 202 → apri Cast, aspetta connessione, poi ritenta una volta
     const sendToTv = async (rawLink) => {
         if (!pairedDeviceId) {
             setShowPairModal(true);
             return;
         }
+
         const cid = extractCid(rawLink);
         if (!cid) {
-            alert("Non riesco a estrarre il CID da questo link.");
+            showToast("Non riesco a estrarre il CID da questo link.", "error");
             return;
         }
-        nudgeCastImmediate()
-        try {
+
+        // helper: singolo invio + parsing "status" dal backend
+        const doSend = async () => {
             const res = await fetch(`${API_BASE}/tv/send`, {
                 method: "POST",
                 headers: {
@@ -459,20 +540,67 @@ export default function App() {
                 },
                 body: JSON.stringify({deviceId: pairedDeviceId, action: "acestream", cid})
             });
-            const data = await res.json().catch(() => ({}));
+
             const isJson = res.headers.get("content-type")?.includes("application/json");
-            if (isJson && (res.status === 403 || res.status === 404)) {
+            const data = isJson ? await res.json().catch(() => ({})) : {};
+            const status = data?.status;
+
+            // pairing perso
+            if (res.status === 403 || res.status === 404) {
                 Cookies.remove("pairedDeviceId");
                 setPairedDeviceId(null);
-                return false;
+                setShowPairModal(true);
+                throw new Error("TV non più collegata");
             }
-            console.log(res.status)
-            if (!res.ok) throw new Error(data.detail || "Invio fallito");
-            // feedback semplice
-            console.log("Inviato alla TV!")
-            //alert("Inviato alla TV!");
+
+            // ok + consegnato
+            if (res.status === 200 && status === "delivered") return true;
+
+            // 202 = no ack / offline / invio fallito → segnalo per fallback
+            if (res.status === 202) {
+                const err = new Error("TV non raggiungibile al momento");
+                err.code = 202;
+                err.reason = status;
+                throw err;
+            }
+
+            if (!res.ok) throw new Error("Invio fallito");
+            return true;
+        };
+
+        try {
+            // 1) primo giro senza Cast
+            await doSend();
+            showToast("Inviato alla TV!", "success"); // opzionale
         } catch (e) {
-            alert(e.message || "Errore invio");
+            // 2) solo se è il caso "non raggiungibile": apri Cast, *aspetta connessione*, poi ritenta
+            if (e?.code === 202) {
+                const want = await askConfirm(
+                    "Nessuna risposta rapida dalla TV. Provo ad attivarla via Cast e ritentare?",
+                    () => openCastChooser()
+                );
+                if (want) {
+                    const ready = await waitForCastReady(8000);
+                    if (!ready) {
+                        showToast("Non sono riuscito a collegarmi via Cast.", "error");
+                        endCastIfOpenedByUs();
+                        return;
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                    try {
+                        await doSend();         // retry una volta, ora che la TV è accesa
+                        showToast("Inviato alla TV!", "success");
+                    } catch (e2) {
+                        showToast(e2.message || "Invio non riuscito", "error");
+                    } finally {
+                        endCastIfOpenedByUs();  // chiudi la sessione Cast solo se l’abbiamo aperta noi
+                    }
+                }
+            } else
+                showToast(e.message || "Errore invio", "error");
+        } finally {
+            // no-op se non l’abbiamo aperta noi
+            endCastIfOpenedByUs();
         }
     };
 
@@ -510,7 +638,7 @@ export default function App() {
                 )}
 
                 {/* (opzionale) pulsante ufficiale Cast */}
-                <google-cast-launcher style={{width: 36, height: 36}}/>
+                {/*<google-cast-launcher style={{width: 36, height: 36}}/>*/}
 
                 <button onClick={() => setDarkMode(!darkMode)} className="text-2xl focus:outline-none">
                     {darkMode ? <FaSun className="text-purple-600"/> : <FaMoon className="text-purple-600"/>}
@@ -523,7 +651,7 @@ export default function App() {
                     duration: searched ? 0.4 : mobileMoving || desktopSecondSearch ? 1.5 : 2.5,
                     ease: "easeOut"
                 }}
-                className={`w-full max-w-xl ${darkMode ? 'bg-gray-800' : 'bg-white'} p-4 rounded-full flex items-center shadow-lg focus-within:ring-2 focus-within:ring-purple-600 transition border border-gray-300 relative shadow-[0px_4px_10px_rgba(0,0,0,0.1)]`}
+                className={`w-full max-w-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'} p-4 rounded-full flex items-center shadow-lg focus-within:ring-2 focus-within:ring-purple-600 transition border border-gray-300 relative shadow-[0px_4px_10px_rgba(0,0,0,0.1)]`}
             >
                 <motion.div className="ml-4 opacity-50">
                     <FaSearch className="text-2xl text-purple-600"/>
@@ -549,7 +677,7 @@ export default function App() {
             </motion.div>
             {error && <p className="mt-4 text-red-500">{error}</p>}
             {results && (
-                <div className="mt-6 w-full max-w-lg">
+                <div className="mt-6 w-full max-w-xl">
                     {results.map((source, index) => (
                         <motion.div
                             key={index}
@@ -579,13 +707,13 @@ export default function App() {
                                             {/* Azioni a destra, dimensione fissa */}
                                             <div className="flex items-center gap-2 flex-none">
                                                 <FaCopy
-                                                    className="text-purple-600 cursor-pointer shrink-0 text-xl"
+                                                    className="text-purple-600 cursor-pointer shrink-0 text-2xl"
                                                     onClick={() => handleCopy(link.link)}
                                                     title="Copia"
                                                 />
                                                 {pairedDeviceId && (
                                                     <MdCast
-                                                        className="text-purple-600 cursor-pointer shrink-0 text-xl"
+                                                        className="text-purple-600 cursor-pointer shrink-0 text-3xl"
                                                         onClick={() => sendToTv(link.link)}
                                                         title="Invia alla TV collegata"
                                                     />
@@ -667,6 +795,42 @@ export default function App() {
                                 </div>
                             )}
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* TOASTS */}
+            <div className="fixed bottom-4 inset-x-0 z-[60] pointer-events-none flex justify-center">
+                <div className="space-y-2 w-full max-w-sm px-4">
+                    {toasts.map(t => (
+                        <div key={t.id}
+                             className={`pointer-events-auto ${toastClass(t.variant)} text-white rounded-xl shadow-lg px-4 py-3`}>
+                            {t.message}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* CONFIRM MODAL */}
+            {confirmState.open && (
+                <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4"
+                     onClick={() => handleConfirmClose(false)}>
+                    <div className={`${darkMode ? "bg-gray-900 text-white" : "bg-white text-black"}
+                    w-full max-w-md rounded-2xl p-5`} onClick={(e) => e.stopPropagation()}>
+                        <p className="text-lg font-semibold mb-3">Conferma</p>
+                        <p className="opacity-80 mb-5">{confirmState.text}</p>
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                                onClick={() => handleConfirmClose(false)}
+                            >Annulla
+                            </button>
+                            <button
+                                className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+                                onClick={() => handleConfirmClose(true)}
+                            >OK
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
