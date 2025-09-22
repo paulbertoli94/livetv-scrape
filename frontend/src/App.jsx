@@ -56,6 +56,57 @@ export default function App() {
 
     const authRef = useRef({uid: null, sig: null});
 
+    // --- Cast init once ---
+    const castInitRef = useRef(false);
+
+    const initCastContextOnce = () => {
+        try {
+            if (!(window.cast && cast.framework)) return false;
+            const ctx = cast.framework.CastContext.getInstance();
+            if (!castInitRef.current) {
+                ctx.setOptions({
+                    receiverApplicationId: chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+                    autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+                    language: "it",
+                });
+                // opzionale: event listeners di debug
+                ctx.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, (e) =>
+                    console.log("[Cast] state:", e.castState)
+                );
+                ctx.addEventListener(cast.framework.CastContextEventType.SESSION_STATE_CHANGED, (e) =>
+                    console.log("[Cast] session:", e.sessionState)
+                );
+                castInitRef.current = true;
+                console.log("[Cast] options set");
+            }
+            return true;
+        } catch (e) {
+            console.warn("[Cast] init fail:", e);
+            return false;
+        }
+    };
+
+    // Init Google Cast SDK (robusto anche se lo script si carica prima dell'effetto)
+    useEffect(() => {
+        // il loader chiamerà questa, ma se arriva prima del mount usiamo anche un polling sotto
+        window.__onGCastApiAvailable = function (isAvailable) {
+            if (!isAvailable) return;
+            initCastContextOnce();
+        };
+
+        // fallback: prova a inizializzare per qualche secondo nel caso il callback sia già passato
+        let tries = 0;
+        const t = setInterval(() => {
+            if (initCastContextOnce()) {
+                clearInterval(t);
+            } else if (++tries > 50) {
+                clearInterval(t);
+            } // ~10s @ 200ms
+        }, 200);
+
+        return () => clearInterval(t);
+    }, []);
+
     useEffect(() => {
         const saved = JSON.parse(localStorage.getItem("auth") || "null");
         if (saved?.uid && saved?.sig) {
@@ -369,6 +420,23 @@ export default function App() {
         return null;
     };
 
+    // deve essere chiamato dentro un gesto utente (onClick)
+    const nudgeCastImmediate = () => {
+        try {
+            if (!initCastContextOnce()) {
+                console.warn("[Cast] options non pronte");
+                return;
+            }
+            // nessun await qui: preserva il gesture context
+            const p = cast.framework.CastContext.getInstance().requestSession();
+            if (p && typeof p.catch === "function") {
+                p.catch(err => console.warn("[Cast] requestSession error:", err?.code || err?.message || err));
+            }
+        } catch (e) {
+            console.warn("[Cast] nudge error:", e);
+        }
+    };
+
     // invio comando alla TV (apre AceStream con CID)
     const sendToTv = async (rawLink) => {
         if (!pairedDeviceId) {
@@ -380,6 +448,7 @@ export default function App() {
             alert("Non riesco a estrarre il CID da questo link.");
             return;
         }
+        nudgeCastImmediate()
         try {
             const res = await fetch(`${API_BASE}/tv/send`, {
                 method: "POST",
@@ -397,9 +466,11 @@ export default function App() {
                 setPairedDeviceId(null);
                 return false;
             }
+            console.log(res.status)
             if (!res.ok) throw new Error(data.detail || "Invio fallito");
             // feedback semplice
-            alert("Inviato alla TV!");
+            console.log("Inviato alla TV!")
+            //alert("Inviato alla TV!");
         } catch (e) {
             alert(e.message || "Errore invio");
         }
@@ -437,6 +508,9 @@ export default function App() {
                         <span className="hidden md:inline">Connetti TV</span>
                     </button>
                 )}
+
+                {/* (opzionale) pulsante ufficiale Cast */}
+                <google-cast-launcher style={{width: 36, height: 36}}/>
 
                 <button onClick={() => setDarkMode(!darkMode)} className="text-2xl focus:outline-none">
                     {darkMode ? <FaSun className="text-purple-600"/> : <FaMoon className="text-purple-600"/>}
