@@ -86,6 +86,22 @@ def acestream():
 
     return jsonify(result)
 
+LANG_MAP = {
+    "1": "Russian",
+    "2": "English",
+    "3": "Ukrainian",
+    "4": "Dutch",
+    "5": "Arabic",
+    "6": "Chinese",
+    "7": "Spanish",
+    "8": "Polish",
+    "9": "Portuguese",
+    "10": "Turkish",
+    "11": "French",
+    "12": "Italian",
+    "13": "German",
+    "14": "Romanian",
+}
 
 def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2):
     """
@@ -150,28 +166,49 @@ def acestream_scraper(search_term):
             logging.info(f"LiveTV {attempt} risposta ricevuta in {time.time() - start_time:.2f}s")
 
             soup = BeautifulSoup(response.text, 'html.parser')
-            tds = soup.find_all("td")
 
             risultati = []
-            for td in tds:
-                titolo_tag = td.find("a", class_="live")
-                desc_tag = td.find("span", class_="evdesc")
+            visti = set()
 
-                if titolo_tag:
-                    titolo = titolo_tag.get_text(strip=True)
-                    url = titolo_tag["href"]
-                else:
+            # prendi direttamente tutti i link evento
+            for a in soup.select('a.live'):
+                row = a.find_parent('tr')
+                if not row:
                     continue
 
-                descrizione = desc_tag.get_text(" ", strip=True) if desc_tag else ""
+                left_td = row.select_one('td[width="34"]')
+                descrizione = ""
+                if left_td:
+                    img = left_td.find('img', alt=True)
+                    if img:
+                        descrizione = img['alt'].strip()
 
-                # controllo sia su titolo che su descrizione
-                if search_term.lower() in titolo.lower() or search_term.lower() in descrizione.lower():
-                    risultati.append({
-                        "titolo": titolo,
-                        "descrizione": descrizione,
-                        "url": url
-                    })
+                titolo = a.get_text(strip=True)
+                url = a.get('href', '')
+                time_tag = row.find('span', class_='evdesc')
+                time_raw = time_tag.get_text(" ", strip=True) if time_tag else ""
+
+                orario = ""
+                if "(" in time_raw and ")" in time_raw:
+                    # tutto prima della parentesi è orario
+                    parts = time_raw.split("(", 1)
+                    orario = parts[0].strip()
+
+                # filtro di ricerca
+                if search_term.lower() not in titolo.lower() and search_term.lower() not in descrizione.lower():
+                    continue
+
+                # deduplica per url
+                if url in visti:
+                    continue
+                visti.add(url)
+
+                risultati.append({
+                    "titolo": titolo,
+                    "orario": orario,
+                    "descrizione": descrizione,
+                    "url": url
+                })
 
             acestream_links = []
             game_title = None
@@ -191,7 +228,15 @@ def acestream_scraper(search_term):
 
                     if tr:
                         language_img = tr.find('td').find('img') if tr.find('td') else None
-                        language = language_img['title'] if language_img and 'title' in language_img.attrs else None
+
+                        language = None
+                        if language_img and language_img.has_attr('title'):
+                            language = (language_img['title'] or '').strip() or None  # "" -> None
+
+                        if not language and language_img and language_img.has_attr('src'):
+                            m = re.search(r'/linkflag/(\d+)\.png', language_img['src'])
+                            flag_id = m.group(1) if m else None
+                            language = LANG_MAP.get(flag_id) if flag_id else None
 
                         bitrate_td = tr.find('td', class_='bitrate')
                         bitrate = bitrate_td.get_text(strip=True) if bitrate_td else None
@@ -204,7 +249,7 @@ def acestream_scraper(search_term):
 
                 game_title_tag = soup_partita.find('h1', class_='sporttitle', itemprop='name')
                 if game_title_tag:
-                    game_title = game_title_tag.find('b').text.strip()
+                    game_title = game_title_tag.find('b').text.strip() + ' | ' + risultati[0]["descrizione"] + ' | ' + risultati[0]["orario"]
 
             match = re.search(r"livetv(\d+)\.me", response.url)
             elapsed_time = time.time() - start_time

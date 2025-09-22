@@ -137,6 +137,7 @@ def link_user_device(session, user_id: str, device_id: str):
 def user_has_access(session, user_id: str, device_id: str) -> bool:
     return session.get(DeviceUser, {"device_id": device_id, "user_id": user_id})
 
+
 def list_users_for_device(session, device_id: str) -> list[str]:
     from sqlalchemy import select
     from db import DeviceUser  # o import diretto se nello stesso file
@@ -144,6 +145,7 @@ def list_users_for_device(session, device_id: str) -> list[str]:
         select(DeviceUser.user_id).where(DeviceUser.device_id == device_id)
     ).scalars().all()
     return rows
+
 
 def unlink_user_device(session, user_id: str, device_id: str) -> bool:
     from db import DeviceUser
