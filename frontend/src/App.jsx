@@ -3,6 +3,7 @@ import {motion} from "framer-motion";
 import {FaArrowRight, FaCopy, FaGooglePlay, FaMoon, FaSearch, FaSun} from "react-icons/fa";
 import {MdCast, MdCastConnected} from "react-icons/md";
 import Cookies from "js-cookie";
+import {CircleFlag} from 'react-circle-flags';
 
 const TV_APP_URL = "https://play.google.com/store/apps/details?id=com.acetvpair";
 const API_BASE = import.meta.env.VITE_API_URL || ""
@@ -62,7 +63,7 @@ export default function App() {
     const showToast = (message, variant = "info") => {
         const id = ++toastIdRef.current;
         setToasts(t => [...t, {id, message, variant}]);
-        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2600);
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 260000);
     };
     const toastClass = (v) =>
         v === "success" ? "bg-green-600" :
@@ -651,7 +652,7 @@ export default function App() {
                     duration: searched ? 0.4 : mobileMoving || desktopSecondSearch ? 1.5 : 2.5,
                     ease: "easeOut"
                 }}
-                className={`w-full max-w-2xl ${darkMode ? 'bg-gray-800' : 'bg-white'} p-4 rounded-full flex items-center shadow-lg focus-within:ring-2 focus-within:ring-purple-600 transition border border-gray-300 relative shadow-[0px_4px_10px_rgba(0,0,0,0.1)]`}
+                className={`w-full max-w-3xl ${darkMode ? 'bg-gray-800 shadow-purple-950' : 'bg-white shadow-purple-300'} p-4 rounded-full flex items-center shadow-lg focus-within:ring-2 focus-within:ring-purple-600 transition relative`}
             >
                 <motion.div className="ml-4 opacity-50">
                     <FaSearch className="text-2xl text-purple-600"/>
@@ -679,53 +680,61 @@ export default function App() {
             {results && (
                 <div className="mt-6 w-full max-w-xl">
                     {results.map((source, index) => (
-                        <motion.div
-                            key={index}
-                            initial={{opacity: 0, y: 20}}
-                            animate={{opacity: 1, y: 0}}
-                            transition={{duration: 0.4, delay: index * 0.1}}
-                            className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-black'} border border-gray-600 transform transition-transform hover:scale-[1.03] hover:shadow-[0px_6px_14px_rgba(0,0,0,0.3)] shadow-[0px_4px_10px_rgba(0,0,0,0.1)]`}
-                        >
-                            <p className="text-gray-400 text-sm font-semibold">{source.game_title || "Senza titolo"}</p>
-                            <ul className="mt-2">
-                                {Array.isArray(source.acestream_links) && source.acestream_links.length > 0 ? (
-                                    source.acestream_links.map((link, i) => (
-                                        <li
-                                            key={i}
-                                            className="mt-2 flex items-center gap-2"
-                                        >
-                                            {/* Link a sinistra che trunca, prende lo spazio */}
-                                            <a
-                                                href={link.link}
-                                                className="flex-1 min-w-0 text-purple-500 hover:underline truncate"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                            >
-                                                {link.language ? `${link.language} - ` : ""} {link.link}
-                                            </a>
+                        <div>
+                            {Array.isArray(source.events) && source.events.length > 0 ? (
+                                source.events.map((event, j) => (
+                                    <div className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-950' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.02]`}>
+                                        <p className="text-gray-400 text-sm font-semibold">{event.event_title || "Senza titolo"}</p>
+                                        <ul className="mt-2">
+                                            {Array.isArray(event.acestream_links) && event.acestream_links.length > 0 ? (
+                                                event.acestream_links.map((link, i) => (
+                                                    <li
+                                                        key={i}
+                                                        className="mt-2 flex items-center gap-2"
+                                                    >
+                                                        <CircleFlag countryCode={link.language} width="27"/>
+                                                        {/* Link a sinistra che trunca, prende lo spazio */}
+                                                        <a
+                                                            href={link.link}
+                                                            className="font-mono flex-1 min-w-0 text-purple-500 hover:underline truncate"
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                        >
+                                                            {link.link}
+                                                        </a>
 
-                                            {/* Azioni a destra, dimensione fissa */}
-                                            <div className="flex items-center gap-2 flex-none">
-                                                <FaCopy
-                                                    className="text-purple-600 cursor-pointer shrink-0 text-2xl"
-                                                    onClick={() => handleCopy(link.link)}
-                                                    title="Copia"
-                                                />
-                                                {pairedDeviceId && (
-                                                    <MdCast
-                                                        className="text-purple-600 cursor-pointer shrink-0 text-3xl"
-                                                        onClick={() => sendToTv(link.link)}
-                                                        title="Invia alla TV collegata"
-                                                    />
-                                                )}
-                                            </div>
-                                        </li>
-                                    ))
-                                ) : (
-                                    <p className="text-gray-500">Nessun link trovato</p>
-                                )}
-                            </ul>
-                        </motion.div>
+                                                        {/* Azioni a destra, dimensione fissa */}
+                                                        <div className="flex items-center gap-2 flex-none">
+                                                            <FaCopy
+                                                                className="text-purple-600 cursor-pointer shrink-0 text-2xl"
+                                                                onClick={() => handleCopy(link.link)}
+                                                                title="Copia"
+                                                            />
+                                                            {pairedDeviceId && (
+                                                                <MdCast
+                                                                    className="text-purple-600 cursor-pointer shrink-0 text-3xl"
+                                                                    onClick={() => sendToTv(link.link)}
+                                                                    title="Invia alla TV collegata"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                    </li>
+                                                ))
+                                            ) : (
+                                                <p className="text-gray-500">Nessun link trovato</p>
+                                            )}
+                                        </ul>
+                                    </div>
+                                ))
+                            ) : (
+                                <div className="mt-6 w-full max-w-xl">
+                                    <div
+                                        className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-950' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.03]`}>
+                                        <p className="text-gray-500">Nessun link trovato</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     ))}
                 </div>
             )}
@@ -804,7 +813,7 @@ export default function App() {
                 <div className="space-y-2 w-full max-w-sm px-4">
                     {toasts.map(t => (
                         <div key={t.id}
-                             className={`pointer-events-auto ${toastClass(t.variant)} text-white rounded-xl shadow-lg px-4 py-3`}>
+                             className={`pointer-events-auto ${toastClass(t.variant)} text-white rounded-xl px-4 py-3`}>
                             {t.message}
                         </div>
                     ))}

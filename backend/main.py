@@ -67,13 +67,13 @@ def acestream():
     if not search_term:
         logging.error("Parametro 'term' mancante")
         return jsonify({"error": "Parameter 'term' is required"}), 400
-    res = test_link(search_term)
-    if res:
-        return res
+    # res = test_link(search_term)
+    # if res:
+    #     return res
     start_time = time.time()
 
     with ThreadPoolExecutor() as executor:
-        future_livetv = executor.submit(acestream_scraper, search_term)
+        future_livetv = executor.submit(livetv_scraper, search_term)
         future_platinsport = executor.submit(platinsport_scraper, search_term)
 
         result = [
@@ -86,22 +86,56 @@ def acestream():
 
     return jsonify(result)
 
-LANG_MAP = {
-    "1": "Russian",
-    "2": "English",
-    "3": "Ukrainian",
-    "4": "Dutch",
-    "5": "Arabic",
-    "6": "Chinese",
-    "7": "Spanish",
-    "8": "Polish",
-    "9": "Portuguese",
-    "10": "Turkish",
-    "11": "French",
-    "12": "Italian",
-    "13": "German",
-    "14": "Romanian",
+
+LANG_CODE = {
+    # ID -> code
+    "1": "ru",
+    "2": "us",
+    "3": "ua",
+    "4": "nl",
+    "5": "sa",  # "ae" se preferisci EAU
+    "6": "cn",
+    "7": "es",
+    "8": "pl",
+    "9": "br",
+    "10": "tr",
+    "11": "fr",
+    "12": "it",
+    "13": "de",
+    "14": "ro",
+
+    # name (lowercase) -> code
+    "russian": "ru",
+    "english": "us",
+    "ukrainian": "ua",
+    "dutch": "nl",
+    "arabic": "sa",
+    "chinese": "cn",
+    "spanish": "es",
+    "polish": "pl",
+    "portuguese": "pt",
+    "turkish": "tr",
+    "french": "fr",
+    "italian": "it",
+    "german": "de",
+    "romanian": "ro",
 }
+
+
+def resolve_lang_code(title: str | None, src: str | None) -> str | None:
+    # prova dal title (nome lingua)
+    if title:
+        key = title.strip().lower()
+        code = LANG_CODE.get(key)
+        if code:
+            return code
+    # fallback: prova dall'ID nel src
+    if src:
+        m = re.search(r'/linkflag/(\d+)\.png', src)
+        if m:
+            return LANG_CODE.get(m.group(1))
+    return None
+
 
 def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2):
     """
@@ -129,7 +163,7 @@ def test_link(search_term):
         return jsonify([
             {
                 "search_term": search_term,
-                "game_title": "Red Bull TV",
+                "event_title": "Red Bull TV",
                 "acestream_links": [
                     {
                         "link": "acestream://963d5f09983d6816022fc2c45dd4d974337adb09",
@@ -140,30 +174,30 @@ def test_link(search_term):
         ])
 
 
-def acestream_scraper(search_term):
+def livetv_scraper(search_term):
     replacements = {
         "f1": "formula 1",
         "motogp": "moto gp"
     }
     search_term = replacements.get(search_term.lower(), search_term)
 
-    logging.info(f"Inizio scraping LiveTV per: {search_term}")
-    start_time = time.time()
-
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
     base_attempt = 863
-    attempt = base_attempt
+    livetv_number = base_attempt
 
-    while attempt <= base_attempt + max_attempts:
-        site_url = f'{base_url}{attempt}{domain_suffix}'
-        path_upcoming = site_url + '/it/allupcoming/'
+    logging.info(f"Inizio scraping LiveTV{livetv_number} per: {search_term}")
+    start_time = time.time()
+
+    while livetv_number <= base_attempt + max_attempts:
+        site_url = f'{base_url}{livetv_number}{domain_suffix}'
+        path_upcoming = site_url + '/enx/allupcoming/'
 
         try:
             response = make_request_with_retry(path_upcoming)
             response.raise_for_status()
-            logging.info(f"LiveTV {attempt} risposta ricevuta in {time.time() - start_time:.2f}s")
+            logging.info(f"LiveTV{livetv_number} risposta ricevuta in {time.time() - start_time:.2f}s")
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -185,6 +219,8 @@ def acestream_scraper(search_term):
 
                 titolo = a.get_text(strip=True)
                 url = a.get('href', '')
+                if "__" in url:
+                    url = url.split("__")[0] + "__/"
                 time_tag = row.find('span', class_='evdesc')
                 time_raw = time_tag.get_text(" ", strip=True) if time_tag else ""
 
@@ -210,64 +246,64 @@ def acestream_scraper(search_term):
                     "url": url
                 })
 
-            acestream_links = []
-            game_title = None
-
+            events = []
             if risultati:
-                url_partita = site_url + risultati[0]["url"]
-                response_partita = make_request_with_retry(url_partita)
-                response_partita.raise_for_status()
-                logging.info(f"LiveTV dettagli partita ricevuti in {time.time() - start_time:.2f}s")
+                for i, risultato in enumerate(risultati, start=1):
+                    count = 1
+                    url_partita = site_url + risultato["url"]
+                    response_partita = make_request_with_retry(url_partita)
+                    response_partita.raise_for_status()
+                    logging.info(f"LiveTV dettagli partita ricevuti in {time.time() - start_time:.2f}s")
 
-                soup_partita = BeautifulSoup(response_partita.text, 'html.parser')
+                    soup_partita = BeautifulSoup(response_partita.text, 'html.parser')
 
-                links = soup_partita.find_all('a', href=lambda href: href and 'acestream://' in href)
+                    links = soup_partita.find_all('a', href=lambda href: href and 'acestream://' in href)
 
-                for link in links:
-                    tr = link.find_parent('tr')
-
-                    if tr:
-                        language_img = tr.find('td').find('img') if tr.find('td') else None
-
+                    event_title = risultato["titolo"] + ' | ' + risultato["descrizione"] + ' | ' + risultato["orario"]
+                    acestream_links = []
+                    for link in links:
+                        count += 1
                         language = None
-                        if language_img and language_img.has_attr('title'):
-                            language = (language_img['title'] or '').strip() or None
+                        bitrate = None
 
-                        if not language and language_img and language_img.has_attr('src'):
-                            m = re.search(r'/linkflag/(\d+)\.png', language_img['src'])
-                            flag_id = m.group(1) if m else None
-                            language = LANG_MAP.get(flag_id) if flag_id else None
+                        tr = link.find_parent('tr')
+                        if tr:
+                            td = tr.find('td')
+                            img = td.find('img') if td else None
+                            if img:
+                                title = img.get('title')
+                                src = img.get('src')
+                                language = resolve_lang_code(title, src)
 
-                        bitrate_td = tr.find('td', class_='bitrate')
-                        bitrate = bitrate_td.get_text(strip=True) if bitrate_td else None
+                            bitrate_td = tr.find('td', class_='bitrate')
+                            bitrate = bitrate_td.get_text(strip=True) if bitrate_td else None
 
                         acestream_links.append({
                             "link": link['href'],
-                            "language": language.capitalize() if language else None,
+                            "language": language,
                             "bitrate": bitrate
                         })
+                    events.append({
+                        "event_title": event_title,
+                        "acestream_links": acestream_links,
+                    })
+                    if count == 3 or i == 3:
+                        break
 
-                game_title_tag = soup_partita.find('h1', class_='sporttitle', itemprop='name')
-                if game_title_tag:
-                    game_title = game_title_tag.find('b').text.strip() + ' | ' + risultati[0]["descrizione"] + ' | ' + risultati[0]["orario"]
-
-            match = re.search(r"livetv(\d+)\.me", response.url)
             elapsed_time = time.time() - start_time
-            logging.info(f"Scraping LiveTV completato in {elapsed_time:.2f}s")
+            logging.info(f"Scraping LiveTV{livetv_number} completato in {elapsed_time:.2f}s")
 
             return {
-                "source": f"LiveTV{match.group(1)}",
                 "search_term": search_term,
-                "game_title": game_title,
-                "acestream_links": acestream_links
+                "events": events
             }
         except requests.exceptions.RequestException as e:
             logging.error(f"Errore LiveTV: {e}")
-            attempt += 1
+            livetv_number += 1
             continue
 
     return {
-        "source": f"LiveTV{attempt - 1}",
+        "source": f"LiveTV{livetv_number - 1}",
         "error": "Unable to connect to LiveTV"
     }
 
@@ -292,6 +328,7 @@ def platinsport_scraper(search_term):
             if parent_link:
                 link_element = parent_link['href']
 
+        events = []
         if link_element:
             detailed_link = link_element.split("https://")[-1]
             detailed_link = "https://" + detailed_link.strip()
@@ -307,7 +344,7 @@ def platinsport_scraper(search_term):
                 return {"source": "PlatinSport", "error": "myDiv1 Content not found"}
 
             acestream_links = []
-            game_title = None
+            event_title = None
             found_title = False
 
             for element in div_content.contents:
@@ -315,7 +352,7 @@ def platinsport_scraper(search_term):
                         element.lower()):
                     if found_title:
                         break
-                    game_title = normalize_string(element.strip())
+                    event_title = normalize_string(element.strip())
                     found_title = True
                 elif found_title and element.name == 'a':
                     href = element.get('href', '')
@@ -326,8 +363,12 @@ def platinsport_scraper(search_term):
                             language_code = language_span['class'][1].split('-')[-1]
                         acestream_links.append({
                             "link": href.strip(),
-                            "language": language_code
+                            "language": language_code,
                         })
+                    events.append({
+                        "event_title": event_title,
+                        "acestream_links": acestream_links,
+                    })
                 elif found_title and isinstance(element, str) and element.strip() == '':
                     continue
                 elif found_title and isinstance(element, str) and element.strip() != '':
@@ -337,10 +378,8 @@ def platinsport_scraper(search_term):
         logging.info(f"Scraping PlatinSport completato in {elapsed_time:.2f}s")
 
         return {
-            "source": "PlatinSport",
             "search_term": search_term,
-            "game_title": game_title,
-            "acestream_links": acestream_links
+            "events": events
         }
     except Exception as e:
         logging.error(f"Errore PlatinSport: {e}")
