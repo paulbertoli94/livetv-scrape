@@ -14,9 +14,9 @@ from flask import jsonify
 from rapidfuzz import fuzz
 
 from auth import sign_uid
-from backend.word import SYNONYMS, STOPWORDS
 from db import init_db
 from pair import tv_bp
+from word import SYNONYMS, STOPWORDS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
