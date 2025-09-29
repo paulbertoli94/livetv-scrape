@@ -6,3 +6,4 @@ fastapi
 gunicorn
 SQLAlchemy
 google-auth
+rapidfuzz

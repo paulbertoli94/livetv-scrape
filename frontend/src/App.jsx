@@ -1,5 +1,5 @@
-import React, {useEffect, useRef, useState} from "react";
-import {motion} from "framer-motion";
+import React, {useEffect, useLayoutEffect, useRef, useState} from "react";
+import {AnimatePresence, motion} from "framer-motion";
 import {FaArrowRight, FaCopy, FaGooglePlay, FaMoon, FaSearch, FaSun} from "react-icons/fa";
 import {MdCast, MdCastConnected} from "react-icons/md";
 import Cookies from "js-cookie";
@@ -86,6 +86,33 @@ export default function App() {
         }
         confirmState.resolve?.(!!ans);
         setConfirmState({open: false, text: "", onConfirm: null, resolve: null});
+    };
+
+    const [isSwitching, setIsSwitching] = useState(false);
+
+    useLayoutEffect(() => {
+        document.documentElement.classList.toggle("dark", darkMode);
+    }, [darkMode]);
+
+    // Salva preferenza
+    useEffect(() => {
+        Cookies.set("darkMode", String(darkMode), {expires: 365});
+    }, [darkMode]);
+
+    // Abilita animazione globale solo durante il cambio tema (300–400ms)
+    const smoothThemeSwitch = () => {
+        const root = document.documentElement;
+        root.classList.add("theme-anim");     // abilita transizioni globali
+        setIsSwitching(true);                  // attiva micro-motion (scale)
+        setTimeout(() => {
+            root.classList.remove("theme-anim");
+            setIsSwitching(false);
+        }, 400); // un filo più lungo della durata delle transition
+    };
+
+    const toggleTheme = () => {
+        smoothThemeSwitch();
+        setDarkMode(v => !v);
     };
 
     // --- Cast wake management ---
@@ -606,84 +633,145 @@ export default function App() {
     };
 
     return (
-        <div
-            className={`flex flex-col items-center min-h-screen p-4 select-none ${darkMode ? 'bg-gray-950 text-white' : 'bg-gray-100 text-black'}`}>
-            <div className="w-full flex items-center justify-end p-4 gap-4">
-                {/* Stato TV */}
-                {pairedDeviceId ? (
-                    <button
-                        className="inline-flex items-center gap-2
+        <>
+            {/* BACKGROUND CROSSFADE — due layer sempre presenti */}
+            <div className="theme-crossfade">
+                <motion.div
+                    key="light-bg"
+                    initial={false}
+                    animate={{opacity: darkMode ? 0 : 1}}
+                    transition={{duration: 0.35, ease: "easeInOut", delay: darkMode ? 0.12 : 0}}
+                    className="bg-gray-100"
+                />
+                <motion.div
+                    key="dark-bg"
+                    initial={false}
+                    animate={{opacity: darkMode ? 1 : 0}}
+                    transition={{duration: 0.35, ease: "easeInOut"}}
+                    className="bg-gray-950"
+                />
+            </div>
+            <motion.div
+                animate={{scale: isSwitching ? 0.992 : 1}}
+                transition={{duration: 0.25, ease: "easeOut"}}
+                className="theme-root relative isolate flex flex-col items-center min-h-screen p-4 select-none text-black dark:text-white will-change-transform"
+            >
+                <div className="w-full flex items-center justify-end p-4 gap-4">
+                    {/* Stato TV */}
+                    {pairedDeviceId ? (
+                        <button
+                            className="inline-flex items-center gap-2
                              rounded-full md:rounded-md
                              p-2 md:px-3 md:py-1
                              focus:outline-none focus:ring-2  text-green-600 md:border md:border-green-600 hover:bg-green-600/10 md:hover:bg-green-600 md:hover:text-white"
-                        title={`TV collegata (${pairedDeviceId}) — clicca per scollegare`}
-                        aria-label="TV collegata: scollega"
-                        onClick={unpairTv}
-                    >
-                        <MdCastConnected className="shrink-0 text-3xl md:text-xl"/>
-                        <span className="hidden md:inline">TV collegata</span>
-                    </button>
-                ) : (
-                    <button
-                        className="inline-flex items-center gap-2
+                            title={`TV collegata (${pairedDeviceId}) — clicca per scollegare`}
+                            aria-label="TV collegata: scollega"
+                            onClick={unpairTv}
+                        >
+                            <MdCastConnected className="shrink-0 text-3xl md:text-xl"/>
+                            <span className="hidden md:inline">TV collegata</span>
+                        </button>
+                    ) : (
+                        <button
+                            className="inline-flex items-center gap-2
                              rounded-full md:rounded-md
                              p-2 md:px-3 md:py-1
                              focus:outline-none focus:ring-2 text-purple-600 md:border md:border-purple-600 hover:bg-purple-600/10 md:hover:bg-purple-600 md:hover:text-white"
-                        title="Connetti TV"
-                        aria-label="Connetti TV"
-                        onClick={() => setShowPairModal(true)}
-                    >
-                        <MdCast className="shrink-0 text-3xl md:text-xl"/>
-                        <span className="hidden md:inline">Connetti TV</span>
-                    </button>
-                )}
-
-                {/* (opzionale) pulsante ufficiale Cast */}
-                {/*<google-cast-launcher style={{width: 36, height: 36}}/>*/}
-
-                <button onClick={() => setDarkMode(!darkMode)} className="text-2xl focus:outline-none">
-                    {darkMode ? <FaSun className="text-purple-600"/> : <FaMoon className="text-purple-600"/>}
-                </button>
-            </div>
-            <motion.div
-                initial={{y: window.innerWidth < 768 ? "20vh" : "30vh"}}
-                animate={{y: `${barPosition}vh`}}
-                transition={{
-                    duration: searched ? 0.4 : mobileMoving || desktopSecondSearch ? 1.5 : 2.5,
-                    ease: "easeOut"
-                }}
-                className={`w-full max-w-3xl ${darkMode ? 'bg-gray-800 shadow-purple-950' : 'bg-white shadow-purple-300'} p-4 rounded-full flex items-center shadow-lg focus-within:ring-2 focus-within:ring-purple-600 transition relative`}
-            >
-                <motion.div className="ml-4 opacity-50">
-                    <FaSearch className="text-2xl text-purple-600"/>
-                </motion.div>
-                <div className="w-full flex">
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        onKeyDown={handleKeyPress}
-                        placeholder="Acestream..."
-                        className={`flex-grow p-2 bg-transparent border-none outline-none text-lg ${darkMode ? 'text-white placeholder-gray-400' : 'text-black placeholder-gray-600'}`}
-                    />
-                </div>
-                <div className="absolute right-6">
-                    {loading ? (
-                        <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-purple-600"></div>
-                    ) : (
-                        <FaArrowRight className="text-2xl text-purple-600 cursor-pointer" onClick={handleSearch}/>
+                            title="Connetti TV"
+                            aria-label="Connetti TV"
+                            onClick={() => setShowPairModal(true)}
+                        >
+                            <MdCast className="shrink-0 text-3xl md:text-xl"/>
+                            <span className="hidden md:inline">Connetti TV</span>
+                        </button>
                     )}
+
+                    {/* (opzionale) pulsante ufficiale Cast */}
+                    {/*<google-cast-launcher style={{width: 36, height: 36}}/>*/}
+
+                    <motion.button
+                        onClick={toggleTheme}
+                        aria-pressed={darkMode}
+                        className="relative inline-flex items-center justify-center h-10 w-10 rounded-full focus:outline-none"
+                        whileTap={{scale: 0.9}}
+                        whileHover={{scale: 1.08}}
+                        transition={{type: "spring", stiffness: 500, damping: 26}}
+                        title={darkMode ? "Passa a chiaro" : "Passa a scuro"}
+                    >
+                        <AnimatePresence initial={false} mode="wait">
+                            {darkMode ? (
+                                <motion.span
+                                    key="sun"
+                                    initial={{rotate: -90, opacity: 0, scale: 0.7}}
+                                    animate={{rotate: 0, opacity: 1, scale: 1}}
+                                    exit={{rotate: 90, opacity: 0, scale: 0.7}}
+                                    transition={{duration: 0.15, ease: "easeInOut"}}
+                                    className="inline-flex"
+                                >
+                                    <FaSun className="text-purple-600 text-2xl"/>
+                                </motion.span>
+                            ) : (
+                                <motion.span
+                                    key="moon"
+                                    initial={{rotate: 90, opacity: 0, scale: 0.7}}
+                                    animate={{rotate: 0, opacity: 1, scale: 1}}
+                                    exit={{rotate: -90, opacity: 0, scale: 0.7}}
+                                    transition={{duration: 0.15, ease: "easeInOut"}}
+                                    className="inline-flex"
+                                >
+                                    <FaMoon className="text-purple-600 text-2xl"/>
+                                </motion.span>
+                            )}
+                        </AnimatePresence>
+                    </motion.button>
                 </div>
-            </motion.div>
-            {error && <p className="mt-4 text-red-500">{error}</p>}
-            {results && (
-                <div className="mt-6 w-full max-w-xl">
-                    {results.map((source, index) => (
-                        <div>
-                            {Array.isArray(source.events) && source.events.length > 0 ? (
-                                source.events.map((event, j) => (
-                                    <div className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-950' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.02]`}>
+                <motion.div
+                    initial={{y: window.innerWidth < 768 ? "20vh" : "30vh"}}
+                    animate={{y: `${barPosition}vh`}}
+                    transition={{
+                        duration: searched ? 0.4 : mobileMoving || desktopSecondSearch ? 1.5 : 2.5,
+                        ease: "easeOut"
+                    }}
+                    className={`w-full z-10 max-w-3xl ${darkMode ? 'bg-gray-800 shadow-purple-900' : 'bg-white shadow-purple-300'} p-4 rounded-full flex items-center shadow-lg focus-within:ring-2 focus-within:ring-purple-600 transition relative`}
+                >
+                    <motion.div className="ml-4 opacity-50">
+                        <FaSearch className="text-2xl text-purple-600"/>
+                    </motion.div>
+                    <div className="w-full flex">
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onKeyDown={handleKeyPress}
+                            placeholder="Acestream..."
+                            className={`flex-grow p-2 bg-transparent border-none outline-none text-lg ${darkMode ? 'text-white placeholder-gray-400' : 'text-black placeholder-gray-600'}`}
+                        />
+                    </div>
+                    <div className="absolute right-6">
+                        {loading ? (
+                            <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-purple-600"></div>
+                        ) : (
+                            <FaArrowRight className="text-2xl text-purple-600 cursor-pointer" onClick={handleSearch}/>
+                        )}
+                    </div>
+                </motion.div>
+                {error && <p className="mt-4 text-red-500">{error}</p>}
+                {results && (
+                    <div className="mt-6 w-full max-w-xl">
+                        {results.every(source => !Array.isArray(source.events) || source.events.length === 0) ? (
+                            <div
+                                className={`p-4 mb-4 mt-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-900' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.03]`}
+                            >
+                                <p className="text-gray-500">Nessun link trovato</p>
+                            </div>
+                        ) : (
+                            results.map((source, index) => (
+                                Array.isArray(source.events) && source.events.length > 0 && source.events.map((event, j) => (
+                                    <div
+                                        key={`${index}-${j}`}
+                                        className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-900' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.02]`}
+                                    >
                                         <p className="text-gray-400 text-sm font-semibold">{event.event_title || "Senza titolo"}</p>
                                         <ul className="mt-2">
                                             {Array.isArray(event.acestream_links) && event.acestream_links.length > 0 ? (
@@ -693,7 +781,6 @@ export default function App() {
                                                         className="mt-2 flex items-center gap-2"
                                                     >
                                                         <CircleFlag countryCode={link.language} width="27"/>
-                                                        {/* Link a sinistra che trunca, prende lo spazio */}
                                                         <a
                                                             href={link.link}
                                                             className="font-mono flex-1 min-w-0 text-purple-500 hover:underline truncate"
@@ -702,8 +789,6 @@ export default function App() {
                                                         >
                                                             {link.link}
                                                         </a>
-
-                                                        {/* Azioni a destra, dimensione fissa */}
                                                         <div className="flex items-center gap-2 flex-none">
                                                             <FaCopy
                                                                 className="text-purple-600 cursor-pointer shrink-0 text-2xl"
@@ -726,123 +811,116 @@ export default function App() {
                                         </ul>
                                     </div>
                                 ))
-                            ) : (
-                                <div className="mt-6 w-full max-w-xl">
-                                    <div
-                                        className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-950' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.03]`}>
-                                        <p className="text-gray-500">Nessun link trovato</p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            )}
-            {showPairModal && (
-                <div
-                    className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center pt-[20dvh] md:pt-[25dvh] lg:items-center lg:pt-0"
-                    onClick={() => setShowPairModal(false)}>
+                            ))
+                        )}
+                    </div>
+                )}
+                {showPairModal && (
                     <div
-                        className={`${darkMode ? "bg-gray-900 text-white" : "bg-white text-black"} w-[92vw] max-w-md rounded-2xl p-5`}
-                        onClick={(e) => e.stopPropagation()}
-                    >
+                        className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center pt-[20dvh] md:pt-[25dvh] lg:items-center lg:pt-0"
+                        onClick={() => setShowPairModal(false)}>
                         <div
-                            className={`mb-4 text-center rounded-xl border ${darkMode ? "border-gray-700 bg-gray-800/60" : "border-gray-200 bg-gray-50"}
+                            className={`${darkMode ? "bg-gray-900 text-white" : "bg-white text-black"} w-[92vw] max-w-md rounded-2xl p-5`}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div
+                                className={`mb-4 text-center rounded-xl border ${darkMode ? "border-gray-700 bg-gray-800/60" : "border-gray-200 bg-gray-50"}
                             p-2.5 flex flex-col items-center sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3`}
-                        >
-                            <p className="m-0 font-semibold text-lg sm:text-xl leading-tight">Collega TV</p>
-                            <a
-                                href={TV_APP_URL}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition focus:outline-none focus:ring-2
-                             ${darkMode ? "bg-purple-700 hover:bg-purple-600 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}
                             >
-                                <FaGooglePlay className="text-base"/>
-                                Scarica l’app
-                            </a>
-                        </div>
-                        <p className="text-sm opacity-80 mb-3 text-center">
-                            Inserisci il <strong>codice a 6 cifre</strong>
-                        </p>
-
-                        <form
-                            onSubmit={(e) => {
-                                e.preventDefault();
-                                handlePairSubmit(pairDigits.join(""));
-                            }}
-                            className="flex flex-col gap-4"
-                        >
-                            <div className="flex justify-center gap-2">
-                                {Array.from({length: DIGITS}).map((_, idx) => (
-                                    <input
-                                        key={idx}
-                                        ref={(el) => (digitRefs.current[idx] = el)}
-                                        value={pairDigits[idx]}
-                                        onChange={(e) => handleDigitChange(idx, e)}
-                                        onPaste={(e) => handlePaste(idx, e)}
-                                        onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                                        type="tel"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        autoComplete="one-time-code"
-                                        autoFocus={idx === 0}
-                                        maxLength={1}
-                                        className={`w-12 h-14 text-center text-2xl rounded-lg border outline-none
-                                          ${pairError
-                                            ? "border-red-500 focus:border-red-500"
-                                            : darkMode
-                                                ? "bg-gray-800 border-gray-700 focus:border-purple-500"
-                                                : "bg-white border-gray-300 focus:border-purple-600"
-                                        }`}
-                                    />
-                                ))}
+                                <p className="m-0 font-semibold text-lg sm:text-xl leading-tight">Collega TV</p>
+                                <a
+                                    href={TV_APP_URL}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition focus:outline-none focus:ring-2
+                             ${darkMode ? "bg-purple-700 hover:bg-purple-600 text-white" : "bg-purple-600 hover:bg-purple-700 text-white"}`}
+                                >
+                                    <FaGooglePlay className="text-base"/>
+                                    Scarica l’app
+                                </a>
                             </div>
-                            {pairError && (
-                                <div className="text-red-500 text-sm text-center -mt-2">
-                                    {pairError}
+                            <p className="text-sm opacity-80 mb-3 text-center">
+                                Inserisci il <strong>codice a 6 cifre</strong>
+                            </p>
+
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    handlePairSubmit(pairDigits.join(""));
+                                }}
+                                className="flex flex-col gap-4"
+                            >
+                                <div className="flex justify-center gap-2">
+                                    {Array.from({length: DIGITS}).map((_, idx) => (
+                                        <input
+                                            key={idx}
+                                            ref={(el) => (digitRefs.current[idx] = el)}
+                                            value={pairDigits[idx]}
+                                            onChange={(e) => handleDigitChange(idx, e)}
+                                            onPaste={(e) => handlePaste(idx, e)}
+                                            onKeyDown={(e) => handleDigitKeyDown(idx, e)}
+                                            type="tel"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            autoComplete="one-time-code"
+                                            autoFocus={idx === 0}
+                                            maxLength={1}
+                                            className={`w-12 h-14 text-center text-2xl rounded-lg border outline-none
+                                          ${pairError
+                                                ? "border-red-500 focus:border-red-500"
+                                                : darkMode
+                                                    ? "bg-gray-800 border-gray-700 focus:border-purple-500"
+                                                    : "bg-white border-gray-300 focus:border-purple-600"
+                                            }`}
+                                        />
+                                    ))}
                                 </div>
-                            )}
-                        </form>
+                                {pairError && (
+                                    <div className="text-red-500 text-sm text-center -mt-2">
+                                        {pairError}
+                                    </div>
+                                )}
+                            </form>
+                        </div>
+                    </div>
+                )}
+
+                {/* TOASTS */}
+                <div className="fixed bottom-4 inset-x-0 z-[60] pointer-events-none flex justify-center">
+                    <div className="space-y-2 w-full max-w-sm px-4">
+                        {toasts.map(t => (
+                            <div key={t.id}
+                                 className={`pointer-events-auto ${toastClass(t.variant)} text-white rounded-xl px-4 py-3`}>
+                                {t.message}
+                            </div>
+                        ))}
                     </div>
                 </div>
-            )}
 
-            {/* TOASTS */}
-            <div className="fixed bottom-4 inset-x-0 z-[60] pointer-events-none flex justify-center">
-                <div className="space-y-2 w-full max-w-sm px-4">
-                    {toasts.map(t => (
-                        <div key={t.id}
-                             className={`pointer-events-auto ${toastClass(t.variant)} text-white rounded-xl px-4 py-3`}>
-                            {t.message}
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* CONFIRM MODAL */}
-            {confirmState.open && (
-                <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4"
-                     onClick={() => handleConfirmClose(false)}>
-                    <div className={`${darkMode ? "bg-gray-900 text-white" : "bg-white text-black"}
+                {/* CONFIRM MODAL */}
+                {confirmState.open && (
+                    <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-4"
+                         onClick={() => handleConfirmClose(false)}>
+                        <div className={`${darkMode ? "bg-gray-900 text-white" : "bg-white text-black"}
                     w-full max-w-md rounded-2xl p-5`} onClick={(e) => e.stopPropagation()}>
-                        <p className="text-lg font-semibold mb-3">Conferma</p>
-                        <p className="opacity-80 mb-5">{confirmState.text}</p>
-                        <div className="flex gap-2 justify-end">
-                            <button
-                                className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
-                                onClick={() => handleConfirmClose(false)}
-                            >Annulla
-                            </button>
-                            <button
-                                className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
-                                onClick={() => handleConfirmClose(true)}
-                            >OK
-                            </button>
+                            <p className="text-lg font-semibold mb-3">Conferma</p>
+                            <p className="opacity-80 mb-5">{confirmState.text}</p>
+                            <div className="flex gap-2 justify-end">
+                                <button
+                                    className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                                    onClick={() => handleConfirmClose(false)}
+                                >Annulla
+                                </button>
+                                <button
+                                    className="px-4 py-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700"
+                                    onClick={() => handleConfirmClose(true)}
+                                >OK
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )}
+            </motion.div>
+        </>
     );
 }

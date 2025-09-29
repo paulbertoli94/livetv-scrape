@@ -1,3 +1,33 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Evita flash bianchi sotto gli strati */
+html {
+  background-color: #f3f4f6; /* = bg-gray-100 */
+}
+html.dark {
+  background-color: #0a0a0a; /* = bg-gray-950 */
+}
+
+/* layer crossfade: sempre sotto a tutto, ma sopra al body */
+.theme-crossfade {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.theme-crossfade > div {
+  position: absolute;
+  inset: 0;
+}
+
+/* transizioni globali */
+.theme-anim * {
+  transition-property: background-color, color, border-color, fill, stroke, box-shadow;
+  transition-duration: 300ms;
+  transition-timing-function: ease;
+}
+.theme-anim .theme-root {
+  transition: background-color 300ms ease, color 300ms ease, transform 250ms ease;
+}
