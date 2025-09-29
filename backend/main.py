@@ -2,7 +2,7 @@ import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from secrets import token_hex
 
@@ -381,6 +381,7 @@ def livetv_scraper(search_term: str):
 
                 try:
                     orario_obj = datetime.strptime(orario, "%H:%M")
+                    orario_obj = orario_obj + timedelta(hours=1)
                     orario_str = orario_obj.strftime("%H:%M")
                 except Exception:
                     orario_str = orario
