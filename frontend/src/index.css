@@ -25,9 +25,9 @@ html.dark {
 /* transizioni globali */
 .theme-anim * {
   transition-property: background-color, color, border-color, fill, stroke, box-shadow;
-  transition-duration: 300ms;
+  transition-duration: 400ms;
   transition-timing-function: ease;
 }
 .theme-anim .theme-root {
-  transition: background-color 300ms ease, color 300ms ease, transform 250ms ease;
+  transition: background-color 400ms ease, color 400ms ease, transform 330ms ease;
 }

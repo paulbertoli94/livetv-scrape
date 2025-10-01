@@ -63,7 +63,7 @@ export default function App() {
     const showToast = (message, variant = "info") => {
         const id = ++toastIdRef.current;
         setToasts(t => [...t, {id, message, variant}]);
-        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 260000);
+        setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2600);
     };
     const toastClass = (v) =>
         v === "success" ? "bg-green-600" :
@@ -119,6 +119,7 @@ export default function App() {
     const castInitRef = useRef(false);
     const openedByUsRef = useRef(false);
     const [autoWakeCast, setAutoWakeCast] = useState(() => Cookies.get("autoWakeCast") === "true");
+    const [casting, setCasting] = useState({}); // es: { "0-2-1": "loading" | "success" | "error" | "idle" }
 
     useEffect(() => {
         Cookies.set("autoWakeCast", String(autoWakeCast), {expires: 365});
@@ -495,9 +496,65 @@ export default function App() {
         }
     };
 
-    const unpairTv = () => {
-        Cookies.remove("pairedDeviceId");
-        setPairedDeviceId(null);
+    const unpairTv = async () => {
+        if (!pairedDeviceId) return true; // già scollegata lato FE
+
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 8000); // timeout 8s
+
+        try {
+            const res = await fetch(`${API_BASE}/tv/unlink`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Auth-Uid": authRef.current?.uid || "",
+                    "X-Auth-Sig": authRef.current?.sig || ""
+                },
+                body: JSON.stringify({deviceId: pairedDeviceId}),
+                signal: controller.signal
+            });
+            const isJson = res.headers.get("content-type")?.includes("application/json");
+            const data = isJson ? await res.json().catch(() => ({})) : {};
+
+            // 200 → ok
+            if (res.ok) {
+                showToast("TV scollegata", "success");
+                Cookies.remove("pairedDeviceId");
+                setPairedDeviceId(null);
+                return true;
+            }
+
+            // 404 → device inesistente → consideriamo già scollegata
+            if (res.status === 404) {
+                showToast("TV non trovata: considerata già scollegata", "warn");
+                Cookies.remove("pairedDeviceId");
+                setPairedDeviceId(null);
+                return true;
+            }
+
+            // 403 → non hai più accesso a quella TV → pulizia locale
+            if (res.status === 403) {
+                showToast("Accesso negato: TV rimossa dal tuo account", "warn");
+                Cookies.remove("pairedDeviceId");
+                setPairedDeviceId(null);
+                return true;
+            }
+
+            // Altri errori
+            const detail = data?.detail || `Errore ${res.status}`;
+            showToast(detail, "error");
+            return false;
+
+        } catch (e) {
+            if (e?.name === "AbortError") {
+                showToast("Timeout durante lo scollegamento", "error");
+            } else {
+                showToast(e?.message || "Errore di rete durante lo scollegamento", "error");
+            }
+            return false;
+        } finally {
+            clearTimeout(t);
+        }
     };
 
     const extractCid = (raw) => {
@@ -543,9 +600,20 @@ export default function App() {
         }, delay);
     };
 
+    const castLink = async (key, url) => {
+        setCasting(s => ({...s, [key]: "loading"}));
+        try {
+            await sendToTv(url, [key]);
+            setCasting(s => ({...s, [key]: "success"}));
+            setTimeout(() => setCasting(s => ({...s, [key]: "idle"})), 1200);
+        } catch (e) {
+            setCasting(s => ({...s, [key]: "error"}));
+            setTimeout(() => setCasting(s => ({...s, [key]: "idle"})), 1500);
+        }
+    };
 
     // invio comando alla TV: 1° giro senza Cast; se 202 → apri Cast, aspetta connessione, poi ritenta una volta
-    const sendToTv = async (rawLink) => {
+    const sendToTv = async (rawLink, [key]) => {
         if (!pairedDeviceId) {
             setShowPairModal(true);
             return;
@@ -603,6 +671,7 @@ export default function App() {
         } catch (e) {
             // 2) solo se è il caso "non raggiungibile": apri Cast, *aspetta connessione*, poi ritenta
             if (e?.code === 202) {
+                setCasting(s => ({...s, [key]: "success"}));
                 const want = await askConfirm(
                     "Nessuna risposta rapida dalla TV. Provo ad attivarla via Cast e ritentare?",
                     () => openCastChooser()
@@ -652,8 +721,8 @@ export default function App() {
                 />
             </div>
             <motion.div
-                animate={{scale: isSwitching ? 0.992 : 1}}
-                transition={{duration: 0.25, ease: "easeOut"}}
+                animate={{scale: isSwitching ? 0.985 : 1}}
+                transition={{duration: 0.30, ease: "easeOut"}}
                 className="theme-root relative isolate flex flex-col items-center min-h-screen p-4 select-none text-black dark:text-white will-change-transform"
             >
                 <div className="w-full flex items-center justify-end p-4 gap-4">
@@ -666,7 +735,11 @@ export default function App() {
                              focus:outline-none focus:ring-2  text-green-600 md:border md:border-green-600 hover:bg-green-600/10 md:hover:bg-green-600 md:hover:text-white"
                             title={`TV collegata (${pairedDeviceId}) — clicca per scollegare`}
                             aria-label="TV collegata: scollega"
-                            onClick={unpairTv}
+                            onClick={() =>
+                                askConfirm("Vuoi scollegare la TV?", () => {
+                                    unpairTv().then();
+                                })
+                            }
                         >
                             <MdCastConnected className="shrink-0 text-3xl md:text-xl"/>
                             <span className="hidden md:inline">TV collegata</span>
@@ -705,7 +778,7 @@ export default function App() {
                                     initial={{rotate: -90, opacity: 0, scale: 0.7}}
                                     animate={{rotate: 0, opacity: 1, scale: 1}}
                                     exit={{rotate: 90, opacity: 0, scale: 0.7}}
-                                    transition={{duration: 0.15, ease: "easeInOut"}}
+                                    transition={{duration: 0.30, ease: "easeInOut"}}
                                     className="inline-flex"
                                 >
                                     <FaSun className="text-purple-600 text-2xl"/>
@@ -716,7 +789,7 @@ export default function App() {
                                     initial={{rotate: 90, opacity: 0, scale: 0.7}}
                                     animate={{rotate: 0, opacity: 1, scale: 1}}
                                     exit={{rotate: -90, opacity: 0, scale: 0.7}}
-                                    transition={{duration: 0.15, ease: "easeInOut"}}
+                                    transition={{duration: 0.30, ease: "easeInOut"}}
                                     className="inline-flex"
                                 >
                                     <FaMoon className="text-purple-600 text-2xl"/>
@@ -761,7 +834,7 @@ export default function App() {
                     <div className="mt-6 w-full max-w-xl">
                         {results.every(source => !Array.isArray(source.events) || source.events.length === 0) ? (
                             <div
-                                className={`p-4 mb-4 mt-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-900' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.03]`}
+                                className={`p-4 mb-4 mt-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-900' : 'bg-white text-black shadow-purple-300'} transform transition-transform mouse:hover:scale-[1.03]`}
                             >
                                 <p className="text-gray-500">Nessun link trovato</p>
                             </div>
@@ -770,41 +843,58 @@ export default function App() {
                                 Array.isArray(source.events) && source.events.length > 0 && source.events.map((event, j) => (
                                     <div
                                         key={`${index}-${j}`}
-                                        className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-900' : 'bg-white text-black shadow-purple-300'} transform transition-transform hover:scale-[1.02]`}
+                                        className={`p-4 mb-4 rounded-xl shadow-lg ${darkMode ? 'bg-gray-800 text-white shadow-purple-900' : 'bg-white text-black shadow-purple-300'} transform transition-transform mouse:hover:scale-[1.02]`}
                                     >
                                         <p className="text-gray-400 text-sm font-semibold">{event.event_title || "Senza titolo"}</p>
                                         <ul className="mt-2">
                                             {Array.isArray(event.acestream_links) && event.acestream_links.length > 0 ? (
-                                                event.acestream_links.map((link, i) => (
-                                                    <li
-                                                        key={i}
-                                                        className="mt-2 flex items-center gap-2"
-                                                    >
-                                                        <CircleFlag countryCode={link.language} width="27"/>
-                                                        <a
-                                                            href={link.link}
-                                                            className="font-mono flex-1 min-w-0 text-purple-500 hover:underline truncate"
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
+                                                event.acestream_links.map((link, i) => {
+                                                    const keyId = `${index}-${j}-${i}`;
+                                                    const state = casting[keyId] ?? "idle";
+                                                    const isLoading = state === "loading";
+                                                    return (
+                                                        <li
+                                                            key={i}
+                                                            className="mt-2 flex items-center gap-2"
                                                         >
-                                                            {link.link}
-                                                        </a>
-                                                        <div className="flex items-center gap-2 flex-none">
-                                                            <FaCopy
-                                                                className="text-purple-600 cursor-pointer shrink-0 text-2xl"
-                                                                onClick={() => handleCopy(link.link)}
-                                                                title="Copia"
-                                                            />
-                                                            {pairedDeviceId && (
-                                                                <MdCast
-                                                                    className="text-purple-600 cursor-pointer shrink-0 text-3xl"
-                                                                    onClick={() => sendToTv(link.link)}
-                                                                    title="Invia alla TV collegata"
+                                                            <CircleFlag countryCode={link.language} width="27"/>
+                                                            <a
+                                                                href={link.link}
+                                                                className="font-mono flex-1 min-w-0 text-purple-500 hover:underline truncate"
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                            >
+                                                                {link.link}
+                                                            </a>
+                                                            <div className="flex items-center gap-2 flex-none">
+                                                                <FaCopy
+                                                                    className="text-purple-600 cursor-pointer shrink-0 text-2xl"
+                                                                    onClick={() => handleCopy(link.link)}
+                                                                    title="Copia"
                                                                 />
-                                                            )}
-                                                        </div>
-                                                    </li>
-                                                ))
+                                                                {pairedDeviceId && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => castLink(keyId, link.link)}
+                                                                        disabled={isLoading}
+                                                                        aria-busy={isLoading}
+                                                                        title={isLoading ? "Invio in corso…" : "Invia alla TV collegata"}
+                                                                        className={`shrink-0 p-0.5 rounded ${isLoading ? "cursor-wait opacity-70" : "cursor-pointer"}`}
+                                                                    >
+                                                                        {isLoading ? (
+                                                                            // stesso spinner della ricerca, solo più piccolo
+                                                                            <div
+                                                                                className="animate-spin rounded-full h-6 w-6 border-t-2 text-3xl border-purple-600"/>
+                                                                        ) : (
+                                                                            <MdCast
+                                                                                className="text-purple-600 text-3xl"/>
+                                                                        )}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </li>
+                                                    );
+                                                })
                                             ) : (
                                                 <p className="text-gray-500">Nessun link trovato</p>
                                             )}
@@ -907,7 +997,7 @@ export default function App() {
                             <p className="opacity-80 mb-5">{confirmState.text}</p>
                             <div className="flex gap-2 justify-end">
                                 <button
-                                    className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800"
+                                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700"
                                     onClick={() => handleConfirmClose(false)}
                                 >Annulla
                                 </button>

@@ -318,13 +318,16 @@ def test_link(search_term):
         return jsonify([
             {
                 "search_term": search_term,
-                "event_title": "Red Bull TV",
-                "acestream_links": [
-                    {
-                        "link": "acestream://963d5f09983d6816022fc2c45dd4d974337adb09",
-                        "bitrate": "3000 kbps",
-                    }
-                ],
+                "events": [{
+                    "event_title": "Tuffi | Redbull | 00:00",
+                    "acestream_links": [
+                        {
+                            "link": "acestream://963d5f09983d6816022fc2c45dd4d974337adb09",
+                            "bitrate": "3000 kbps",
+                            "language": "it"
+                        }
+                    ]
+                }]
             }
         ])
 

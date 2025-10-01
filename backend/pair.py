@@ -272,6 +272,18 @@ def tv_unlink_user(user_id):
         return jsonify({"ok": ok, "deviceId": dev_id, "userId": user_id})
 
 
+@tv_bp.post("/tv/unlink")
+@require_auth_lite
+def tv_unlink_for_user():
+    data = request.get_json(silent=True) or {}
+    device_id = (data.get("deviceId") or "").strip()
+    if not device_id:
+        return jsonify({"detail": "deviceId mancante"}), 400
+    with db_session() as s:
+        ok = unlink_user_device(s, g.user_id, device_id)
+        return jsonify({"ok": ok})
+
+
 @tv_bp.post("/tv/ack")
 def tv_ack():
     # la TV si autentica con X-Device-Id / X-Device-Key
