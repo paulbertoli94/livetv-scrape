@@ -162,6 +162,11 @@ def acestream():
         logging.error("Parametro 'term' mancante")
         return jsonify({"error": "Parameter 'term' is required"}), 400
     # ================TEST====================================================#
+    replacements = {
+        "f1": "formula 1",
+    }
+
+    search_term = replacements.get(search_term.lower(), search_term)
     res = test_link(search_term)
     if res:
         return res
@@ -432,7 +437,8 @@ def livetv_scraper(search_term: str):
                     acestream_links.append({
                         "link": link['href'],
                         "language": language,
-                        "bitrate": bitrate
+                        "bitrate": bitrate,
+                        "quality": bitrate_to_quality(bitrate)
                     })
 
                 events.append({
@@ -455,6 +461,33 @@ def livetv_scraper(search_term: str):
 
     return {"source": f"LiveTV{livetv_number - 1}", "error": "Unable to connect to LiveTV"}
 
+def bitrate_to_quality(bitrate_str):
+    """
+    Converte un valore come '8000kbps' o '12000' nella qualità video approssimativa:
+    4K, UHD, FHD, HD o None.
+    Gestisce anche input None o non validi.
+    """
+    if not bitrate_str:
+        return None
+
+    # Estrae solo la parte numerica (es. '8000kbps' -> 8000)
+    import re
+    match = re.search(r'(\d+)', str(bitrate_str))
+    if not match:
+        return None
+
+    bitrate = int(match.group(1))
+
+    if bitrate >= 15000:
+        return "4K"
+    elif bitrate >= 10000:
+        return "UHD"
+    elif bitrate >= 5000:
+        return "FHD"
+    elif bitrate >= 2500:
+        return "HD"
+    else:
+        return None
 
 def parse_platin_events(html: str):
     soup = BeautifulSoup(html, "html.parser")
@@ -495,6 +528,8 @@ def parse_platin_events(html: str):
                         seen.add(href)
                         lang = None
                         span = nxt.find("span")
+                        channel_quality = nxt.get_text(strip=True)
+                        channel, quality = parse_channel_quality(channel_quality)
                         if span:
                             for cls in span.get("class", []):
                                 if cls.startswith("fi-"):
@@ -503,7 +538,8 @@ def parse_platin_events(html: str):
                         links.append({
                             "link": href,
                             "language": lang,
-                            "channel": nxt.get_text(strip=True)
+                            "channel": channel,
+                            "quality": quality
                         })
                 nxt = nxt.next_sibling
 
@@ -517,6 +553,19 @@ def parse_platin_events(html: str):
 
     return events
 
+def parse_channel_quality(name: str):
+    """
+    Estrae il nome del canale e la qualità (4K, UHD, FHD, HD o None)
+    da una stringa come 'DAZN F1 4K' o 'SKY SPORT F1 FHD'.
+    """
+    match = re.search(r'\b(4K|UHD|FHD|HD)\b$', name.strip(), re.IGNORECASE)
+    if match:
+        quality = match.group(1).upper()
+        channel = re.sub(r'\b(4K|UHD|FHD|HD)\b$', '', name.strip(), flags=re.IGNORECASE).strip()
+    else:
+        quality = None
+        channel = name.strip()
+    return channel, quality
 
 def platinsport_scraper(search_term):
     logging.info(f"Inizio scraping PlatinSport per: {search_term}")

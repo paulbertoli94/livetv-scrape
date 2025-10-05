@@ -31,3 +31,38 @@ html.dark {
 .theme-anim .theme-root {
   transition: background-color 400ms ease, color 400ms ease, transform 330ms ease;
 }
+
+.quality {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 6px;
+  text-transform: uppercase;
+  transition: all 0.2s ease-in-out;
+}
+
+/* Color palette bilanciata per entrambi i temi */
+.quality-4k {
+  background: linear-gradient(145deg, #ffb347, #ffcc33);
+  color: #2c2c2c;
+}
+
+.quality-uhd {
+  background: linear-gradient(145deg, #8e44ad, #9b59b6);
+  color: #ffffff;
+}
+
+.quality-fhd {
+  background: linear-gradient(145deg, #2980b9, #3498db);
+  color: #ffffff;
+}
+
+.quality-hd {
+  background: linear-gradient(145deg, #27ae60, #2ecc71);
+  color: #ffffff;
+}

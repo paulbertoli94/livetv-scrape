@@ -857,7 +857,12 @@ export default function App() {
                                                             key={i}
                                                             className="mt-2 flex items-center gap-2"
                                                         >
-                                                            <CircleFlag countryCode={link.language} width="27"/>
+                                                            <span
+                                                                className={`quality ${darkMode ? 'shadow-purple-900' : 'shadow-purple-300'} shadow-md ${link.quality ? `quality-${link.quality.toLowerCase()}` : 'quality-none'}`}
+                                                            >
+                                                                {link.quality || ""}
+                                                            </span>
+                                                            <CircleFlag className={`rounded-full ${darkMode ? 'shadow-purple-900' : 'shadow-purple-300'} shadow-md`} countryCode={link.language} width="27"/>
                                                             <a
                                                                 href={link.link}
                                                                 className="font-mono flex-1 min-w-0 text-purple-500 hover:underline truncate"
