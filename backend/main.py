@@ -341,7 +341,7 @@ def livetv_scraper(search_term: str):
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
-    base_attempt = 863
+    base_attempt = 868
     livetv_number = base_attempt
 
     logging.info(f"Inizio scraping LiveTV{livetv_number} per: {search_term}")
