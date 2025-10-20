@@ -46,10 +46,15 @@ export default defineConfig({
   ],
   server: {
     host: true,
+    // proxy: {
+    //   "/acestream": { target: "http://192.168.1.10:5000", changeOrigin: true, secure: false },
+    //   "^/tv($|/)": { target: "http://192.168.1.10:5000", changeOrigin: true, secure: false },
+    //   "/auth": { target: "http://192.168.1.10:5000", changeOrigin: true, secure: false },
+    // }
     proxy: {
-      "/acestream": { target: "http://192.168.1.15:5000", changeOrigin: true, secure: false },
-      "^/tv($|/)": { target: "http://192.168.1.15:5000", changeOrigin: true, secure: false },
-      "/auth": { target: "http://192.168.1.15:5000", changeOrigin: true, secure: false },
+      "/acestream": { target: "http://127.0.0.1:5000", changeOrigin: true, secure: false },
+      "^/tv($|/)": { target: "http://127.0.0.1:5000", changeOrigin: true, secure: false },
+      "/auth": { target: "http://127.0.0.1:5000", changeOrigin: true, secure: false },
     },
   },
 });

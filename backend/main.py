@@ -329,7 +329,8 @@ def test_link(search_term):
                         {
                             "link": "acestream://963d5f09983d6816022fc2c45dd4d974337adb09",
                             "bitrate": "3000 kbps",
-                            "language": "it"
+                            "language": "it",
+                            "quality": "4K"
                         }
                     ]
                 }]
@@ -468,13 +469,13 @@ def bitrate_to_quality(bitrate_str):
     Gestisce anche input None o non validi.
     """
     if not bitrate_str:
-        return None
+        return "SD"
 
     # Estrae solo la parte numerica (es. '8000kbps' -> 8000)
     import re
     match = re.search(r'(\d+)', str(bitrate_str))
     if not match:
-        return None
+        return "SD"
 
     bitrate = int(match.group(1))
 
@@ -487,7 +488,7 @@ def bitrate_to_quality(bitrate_str):
     elif bitrate >= 2500:
         return "HD"
     else:
-        return None
+        return "SD"
 
 def parse_platin_events(html: str):
     soup = BeautifulSoup(html, "html.parser")
@@ -563,7 +564,7 @@ def parse_channel_quality(name: str):
         quality = match.group(1).upper()
         channel = re.sub(r'\b(4K|UHD|FHD|HD)\b$', '', name.strip(), flags=re.IGNORECASE).strip()
     else:
-        quality = None
+        quality = "SD"
         channel = name.strip()
     return channel, quality
 
