@@ -509,7 +509,9 @@ def parse_platin_events(html: str):
             hhmm = ""
             if dt:
                 try:
-                    hhmm = datetime.fromisoformat(dt.replace("Z", "+00:00")).strftime("%H:%M")
+                    utc_dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+                    local_dt = utc_dt.astimezone()  # converte al fuso locale
+                    hhmm = local_dt.strftime("%H:%M")
                 except Exception:
                     hhmm = el.get_text(strip=True)
 
