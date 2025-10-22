@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from datetime import datetime, timedelta
 from pathlib import Path
 from secrets import token_hex
+from zoneinfo import ZoneInfo
 
 import requests
 import unicodedata
@@ -139,7 +140,6 @@ app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
 app.register_blueprint(tv_bp)
 session = requests.Session()
 
-
 @app.get("/")
 def _index():
     return send_from_directory(app.static_folder, "index.html")
@@ -154,6 +154,12 @@ def auth_anon():
 @app.route('/acestream', methods=['GET'])
 def acestream():
     logging.info(f"Ricevuta richiesta con termine di ricerca: {request.args.get('term')}")
+
+    # Time-Zone obbligatorio dal FE
+    tz_header = request.headers.get("Time-Zone")
+    if not tz_header:
+        return jsonify({"error": "Missing Time-Zone header"}), 400
+    target_tz = _to_zoneinfo(tz_header)
 
     result = []
     raw_term = request.args.get('term', '')
@@ -174,8 +180,8 @@ def acestream():
 
     start_time = time.time()
     with ThreadPoolExecutor(max_workers=2) as executor:
-        f_ltv = executor.submit(livetv_scraper, search_term)
-        f_ps = executor.submit(platinsport_scraper, search_term)
+        f_ltv = executor.submit(livetv_scraper, search_term, target_tz)
+        f_ps = executor.submit(platinsport_scraper, search_term, target_tz)
 
         results = []
         try:
@@ -230,6 +236,15 @@ LANG_CODE = {
     "romanian": "ro",
 }
 
+def _to_zoneinfo(tz_str: str):
+    try:
+        return ZoneInfo(tz_str)
+    except Exception:
+        try:
+            import tzdata  # backfill se il sistema non ha /usr/share/zoneinfo
+            return ZoneInfo(tz_str)
+        except Exception:
+            return None
 
 def _s(x):  # safe str
     return (x or "").strip()
@@ -338,7 +353,7 @@ def test_link(search_term):
         ])
 
 
-def livetv_scraper(search_term: str):
+def livetv_scraper(search_term: str, target_tz: ZoneInfo):
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
@@ -389,9 +404,15 @@ def livetv_scraper(search_term: str):
                     orario = m.group(0) if m else before_paren
 
                 try:
-                    orario_obj = datetime.strptime(orario, "%H:%M")
-                    orario_obj = orario_obj + timedelta(hours=1)
-                    orario_str = orario_obj.strftime("%H:%M")
+                    if orario:
+                        # LiveTV usa orario inglese (Europe/London)
+                        t = datetime.strptime(orario, "%H:%M").time()
+                        london_dt = datetime.now(ZoneInfo("Europe/London")).replace(
+                            hour=t.hour, minute=t.minute, second=0, microsecond=0
+                        )
+                        # converte nel fuso orario dell'utente
+                        local_dt = london_dt.astimezone(target_tz)
+                        orario_str = local_dt.strftime("%H:%M")
                 except Exception:
                     orario_str = orario
 
@@ -462,6 +483,7 @@ def livetv_scraper(search_term: str):
 
     return {"source": f"LiveTV{livetv_number - 1}", "error": "Unable to connect to LiveTV"}
 
+
 def bitrate_to_quality(bitrate_str):
     """
     Converte un valore come '8000kbps' o '12000' nella qualità video approssimativa:
@@ -490,7 +512,8 @@ def bitrate_to_quality(bitrate_str):
     else:
         return "SD"
 
-def parse_platin_events(html: str):
+
+def parse_platin_events(html: str, target_tz: ZoneInfo):
     soup = BeautifulSoup(html, "html.parser")
     root = soup.select_one("div.myDiv1") or soup
 
@@ -510,7 +533,7 @@ def parse_platin_events(html: str):
             if dt:
                 try:
                     utc_dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
-                    local_dt = utc_dt.astimezone()  # converte al fuso locale
+                    local_dt = utc_dt.astimezone(target_tz)
                     hhmm = local_dt.strftime("%H:%M")
                 except Exception:
                     hhmm = el.get_text(strip=True)
@@ -556,6 +579,7 @@ def parse_platin_events(html: str):
 
     return events
 
+
 def parse_channel_quality(name: str):
     """
     Estrae il nome del canale e la qualità (4K, UHD, FHD, HD o None)
@@ -570,7 +594,8 @@ def parse_channel_quality(name: str):
         channel = name.strip()
     return channel, quality
 
-def platinsport_scraper(search_term):
+
+def platinsport_scraper(search_term: str, target_tz: ZoneInfo):
     logging.info(f"Inizio scraping PlatinSport per: {search_term}")
     start_time = time.time()
     site_url = "https://www.platinsport.com/"
@@ -593,7 +618,7 @@ def platinsport_scraper(search_term):
         # 2) pagina con tutti gli eventi
         detailed_response = make_request_with_retry(detailed_link)
         detailed_response.raise_for_status()
-        parsed_events = parse_platin_events(detailed_response.text)
+        parsed_events = parse_platin_events(detailed_response.text, target_tz)
 
         if not parsed_events:
             return {"search_term": search_term, "events": []}

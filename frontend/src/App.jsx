@@ -426,6 +426,7 @@ export default function App() {
 
         try {
             const response = await fetch(`${API_BASE}/acestream?term=${encodeURIComponent(searchTerm)}`, {
+                headers: { 'Time-Zone': Intl.DateTimeFormat().resolvedOptions().timeZone },
                 signal: controller.signal,
                 cache: "no-store"
             });
