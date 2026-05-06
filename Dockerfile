@@ -1,11 +1,14 @@
 # --- Frontend (Debian) ---
 FROM node:22-slim AS frontend
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
- && rm -rf /var/lib/apt/lists/*
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --legacy-peer-deps
-COPY frontend ./
+COPY frontend/index.html ./
+COPY frontend/vite.config.js ./
+COPY frontend/postcss.config.js ./
+COPY frontend/tailwind.config.js ./
+COPY frontend/public ./public
+COPY frontend/src ./src
 ENV CI=true
 RUN npm run build
 
@@ -13,16 +16,15 @@ RUN npm run build
 FROM python:3.12-slim
 WORKDIR /usr/src/
 
-ENV PIP_NO_CACHE_DIR=1 PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONDONTWRITEBYTECODE=1
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates openssl tzdata \
+ && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && update-ca-certificates
 
 COPY backend/requirements.txt ./
 # Installa senza compilare bytecode per risparmiare spazio
-RUN pip install -U pip setuptools wheel certifi --no-cache-dir --no-compile \
- && pip install --no-cache-dir --no-compile -r requirements.txt \
+RUN pip install --no-cache-dir --no-compile -r requirements.txt \
  && python -m pip uninstall -y pip setuptools wheel || true
 
 # (opzionale) forza requests a usare il trust store di sistema

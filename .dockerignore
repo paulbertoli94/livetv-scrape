@@ -6,12 +6,15 @@ __pycache__/
 .env
 
 # Node
+node_modules/
 frontend/node_modules/
+frontend/dist/
 frontend/build/
 frontend/npm-debug.log
 
 # Editor/IDE
 .idea/
+frontend/.idea/
 .vscode/
 
 # Git
@@ -22,6 +25,7 @@ frontend/npm-debug.log
 *.log
 coverage/
 .cache/
+store.json
 
 # Sistema operativo
 .DS_Store
