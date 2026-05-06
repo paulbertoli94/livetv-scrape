@@ -858,11 +858,13 @@ export default function App() {
                                                             key={i}
                                                             className="mt-2 flex items-center gap-2"
                                                         >
-                                                            <span
-                                                                className={`quality ${darkMode ? 'shadow-purple-900' : 'shadow-purple-300'} shadow-md ${link.quality ? `quality-${link.quality.toLowerCase()}` : 'quality-none'}`}
-                                                            >
-                                                                {link.quality || ""}
-                                                            </span>
+                                                            {link.quality ? (
+                                                                <span
+                                                                    className={`quality ${darkMode ? 'shadow-purple-900' : 'shadow-purple-300'} shadow-md quality-${link.quality.toLowerCase()}`}
+                                                                >
+                                                                    {link.quality}
+                                                                </span>
+                                                            ) : null}
                                                             <CircleFlag className={`rounded-full ${darkMode ? 'shadow-purple-900' : 'shadow-purple-300'} shadow-md`} countryCode={link.language} width="27"/>
                                                             <a
                                                                 href={link.link}

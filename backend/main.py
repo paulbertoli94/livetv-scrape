@@ -1,8 +1,9 @@
+import base64
 import logging
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from secrets import token_hex
 from zoneinfo import ZoneInfo
@@ -139,6 +140,15 @@ logging.info(f"[STATIC] Uso frontend da: {FRONTEND_DIR}")
 app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="/")
 app.register_blueprint(tv_bp)
 session = requests.Session()
+session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/136.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7",
+})
 
 @app.get("/")
 def _index():
@@ -265,7 +275,7 @@ def resolve_lang_code(title: str | None, src: str | None) -> str | None:
     return None
 
 
-def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2):
+def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2, **request_kwargs):
     """
     Effettua una richiesta HTTP con sessione, retry e timeout configurabili.
     """
@@ -273,7 +283,7 @@ def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2):
         # per ogni tentativo aumento il timeout con il delay
         timeout = timeout + delay
         try:
-            response = session.get(url, timeout=timeout)
+            response = session.get(url, timeout=timeout, **request_kwargs)
             response.raise_for_status()
             return response
         except requests.exceptions.RequestException as e:
@@ -357,7 +367,7 @@ def livetv_scraper(search_term: str, target_tz: ZoneInfo):
     base_url = 'https://livetv'
     domain_suffix = '.me'
     max_attempts = 2
-    base_attempt = 868
+    base_attempt = 876
     livetv_number = base_attempt
 
     logging.info(f"Inizio scraping LiveTV{livetv_number} per: {search_term}")
@@ -520,15 +530,19 @@ def parse_platin_events(html: str, target_tz: ZoneInfo):
     events = []
     current_competition = None
 
-    for el in root.children:
-        # competizione
-        if getattr(el, "name", None) == "p":
-            current_competition = el.get_text(strip=True)
+    children = [el for el in root.children if getattr(el, "name", None)]
+    i = 0
+    while i < len(children):
+        el = children[i]
+
+        if el.name == "p":
+            current_competition = el.get_text(" ", strip=True)
+            i += 1
             continue
 
-        # evento
-        if getattr(el, "name", None) == "time":
-            dt = el.get("datetime") or el.get_text(strip=True)
+        if el.name == "div" and "match-title-bar" in (el.get("class") or []):
+            time_el = el.find("time")
+            dt = (time_el.get("datetime") if time_el else "") or (time_el.get_text(strip=True) if time_el else "")
             hhmm = ""
             if dt:
                 try:
@@ -536,38 +550,36 @@ def parse_platin_events(html: str, target_tz: ZoneInfo):
                     local_dt = utc_dt.astimezone(target_tz)
                     hhmm = local_dt.strftime("%H:%M")
                 except Exception:
-                    hhmm = el.get_text(strip=True)
+                    hhmm = time_el.get_text(strip=True) if time_el else ""
 
-            # titolo = testo fino al primo link
-            match_title = ""
+            match_title = el.get_text(" ", strip=True)
             links = []
             seen = set()
 
-            nxt = el.next_sibling
-            while nxt and getattr(nxt, "name", None) not in ("time", "p"):
-                if isinstance(nxt, str) and nxt.strip():
-                    if not match_title:
-                        match_title = nxt.strip()
-                elif getattr(nxt, "name", None) == "a":
-                    href = (nxt.get("href") or "").strip()
-                    if href.startswith("acestream://") and href not in seen:
-                        seen.add(href)
-                        lang = None
-                        span = nxt.find("span")
-                        channel_quality = nxt.get_text(strip=True)
-                        channel, quality = parse_channel_quality(channel_quality)
-                        if span:
-                            for cls in span.get("class", []):
-                                if cls.startswith("fi-"):
-                                    lang = cls.split("-", 1)[-1]
-                                    break
-                        links.append({
-                            "link": href,
-                            "language": lang,
-                            "channel": channel,
-                            "quality": quality
-                        })
-                nxt = nxt.next_sibling
+            next_el = children[i + 1] if i + 1 < len(children) else None
+            if next_el and next_el.name == "div" and "button-group" in (next_el.get("class") or []):
+                for a in next_el.select("a[href]"):
+                    href = (a.get("href") or "").strip()
+                    if not href.startswith("acestream://") or href in seen:
+                        continue
+                    seen.add(href)
+
+                    lang = None
+                    span = a.find("span")
+                    channel_quality = a.get_text(" ", strip=True)
+                    channel, quality = parse_channel_quality(channel_quality)
+                    if span:
+                        for cls in span.get("class", []):
+                            if cls.startswith("fi-"):
+                                lang = cls.split("-", 1)[-1]
+                                break
+
+                    links.append({
+                        "link": href,
+                        "language": lang,
+                        "channel": channel,
+                        "quality": quality
+                    })
 
             if match_title and links:
                 events.append({
@@ -576,6 +588,10 @@ def parse_platin_events(html: str, target_tz: ZoneInfo):
                     "title": match_title,
                     "links": links
                 })
+            i += 2
+            continue
+
+        i += 1
 
     return events
 
@@ -590,33 +606,35 @@ def parse_channel_quality(name: str):
         quality = match.group(1).upper()
         channel = re.sub(r'\b(4K|UHD|FHD|HD)\b$', '', name.strip(), flags=re.IGNORECASE).strip()
     else:
-        quality = "SD"
+        quality = None
         channel = name.strip()
     return channel, quality
+
+
+def build_platinsport_link():
+    day_key = datetime.now(timezone.utc).strftime("%Y-%m-%d") + "PLATINSPORT"
+    encoded_key = base64.b64encode(day_key.encode()).decode()
+    return f"https://www.platinsport.com/link/source-list.php?key={encoded_key}"
 
 
 def platinsport_scraper(search_term: str, target_tz: ZoneInfo):
     logging.info(f"Inizio scraping PlatinSport per: {search_term}")
     start_time = time.time()
-    site_url = "https://www.platinsport.com/"
+    site_url = "https://platinsport.com/"
 
     try:
-        # 1) prendi link giornaliero
+        # 1) warm-up homepage: utile per verificare raggiungibilità e referer
         response = make_request_with_retry(site_url)
         response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
-        button = soup.find("button", string="ACESTREAM")
-        if not button:
-            return {"source": "PlatinSport", "error": "ACESTREAM button not found"}
 
-        parent_link = button.find_parent("a", href=True)
-        if not parent_link:
-            return {"source": "PlatinSport", "error": "Parent link not found"}
-
-        detailed_link = "https://" + parent_link["href"].split("https://")[-1].strip()
-
-        # 2) pagina con tutti gli eventi
-        detailed_response = make_request_with_retry(detailed_link)
+        # 2) pagina link protetta dal disclaimer
+        detailed_link = build_platinsport_link()
+        session.cookies.set("disclaimer_accepted", "true", domain="www.platinsport.com", path="/")
+        session.cookies.set("disclaimer_accepted", "true", domain="platinsport.com", path="/")
+        detailed_response = make_request_with_retry(
+            detailed_link,
+            headers={"Referer": site_url}
+        )
         detailed_response.raise_for_status()
         parsed_events = parse_platin_events(detailed_response.text, target_tz)
 
