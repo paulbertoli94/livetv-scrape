@@ -194,12 +194,7 @@ def acestream():
         f_ps = executor.submit(platinsport_scraper, search_term, target_tz)
 
         results = []
-        try:
-            f_ltv_res = f_ltv.result(timeout=5)
-            results.append(f_ltv_res)
-        except FuturesTimeoutError:
-            f_ltv.cancel()
-            results.append({"source": "LiveTV", "error": "timeout"})
+        results.append(f_ltv.result())
 
         try:
             f_ps_res = f_ps.result(timeout=5)
@@ -378,7 +373,7 @@ def livetv_scraper(search_term: str, target_tz: ZoneInfo):
         path_upcoming = site_url + '/enx/allupcoming/'
 
         try:
-            response = make_request_with_retry(path_upcoming)
+            response = make_request_with_retry(path_upcoming, timeout=5)
             response.raise_for_status()
             logging.info(f"LiveTV{livetv_number} risposta in {time.time() - start_time:.2f}s")
 
@@ -446,7 +441,7 @@ def livetv_scraper(search_term: str, target_tz: ZoneInfo):
             events = []
             for i, risultato in enumerate(selezionati, start=1):
                 url_partita = site_url + risultato["url"]
-                response_partita = make_request_with_retry(url_partita)
+                response_partita = make_request_with_retry(url_partita, timeout=5)
                 response_partita.raise_for_status()
                 logging.info(f"LiveTV dettagli partita in {time.time() - start_time:.2f}s")
 
