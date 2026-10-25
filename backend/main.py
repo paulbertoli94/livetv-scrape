@@ -270,20 +270,29 @@ def resolve_lang_code(title: str | None, src: str | None) -> str | None:
     return None
 
 
-def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2, **request_kwargs):
+def make_request_with_retry(url, retries=2, delay=0.3, timeout=0.2, deadline=None, **request_kwargs):
     """
     Effettua una richiesta HTTP con sessione, retry e timeout configurabili.
     """
     for attempt in range(retries):
         # per ogni tentativo aumento il timeout con il delay
         timeout = timeout + delay
+        request_timeout = timeout
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            request_timeout = min(request_timeout, remaining)
         try:
-            response = session.get(url, timeout=timeout, **request_kwargs)
+            response = session.get(url, timeout=request_timeout, **request_kwargs)
             response.raise_for_status()
             return response
         except requests.exceptions.RequestException as e:
             logging.warning(f"Tentativo {attempt + 1} fallito per {url}: {e}")
-            time.sleep(delay)
+            if deadline is None:
+                time.sleep(delay)
+            else:
+                time.sleep(min(delay, max(0, deadline - time.monotonic())))
     raise requests.exceptions.RequestException(f"Impossibile ottenere una risposta da {url} dopo {retries} tentativi")
 
 
@@ -368,12 +377,13 @@ def livetv_scraper(search_term: str, target_tz: ZoneInfo):
     logging.info(f"Inizio scraping LiveTV{livetv_number} per: {search_term}")
     start_time = time.time()
 
-    while livetv_number <= base_attempt + max_attempts:
+    deadline = time.monotonic() + 12
+    while livetv_number <= base_attempt + max_attempts and time.monotonic() < deadline:
         site_url = f'{base_url}{livetv_number}{domain_suffix}'
         path_upcoming = site_url + '/enx/allupcoming/'
 
         try:
-            response = make_request_with_retry(path_upcoming, timeout=5)
+            response = make_request_with_retry(path_upcoming, timeout=3, deadline=deadline)
             response.raise_for_status()
             logging.info(f"LiveTV{livetv_number} risposta in {time.time() - start_time:.2f}s")
 
@@ -441,7 +451,7 @@ def livetv_scraper(search_term: str, target_tz: ZoneInfo):
             events = []
             for i, risultato in enumerate(selezionati, start=1):
                 url_partita = site_url + risultato["url"]
-                response_partita = make_request_with_retry(url_partita, timeout=5)
+                response_partita = make_request_with_retry(url_partita, timeout=3, deadline=deadline)
                 response_partita.raise_for_status()
                 logging.info(f"LiveTV dettagli partita in {time.time() - start_time:.2f}s")
 
