@@ -19,6 +19,7 @@ from auth import sign_uid
 from db import init_db
 from pair import tv_bp
 from word import SYNONYMS, STOPWORDS
+from overtakefans import is_f1_search, overtakefans_scraper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -189,9 +190,13 @@ def acestream():
     # ================TEST====================================================#
 
     start_time = time.time()
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         f_ltv = executor.submit(livetv_scraper, search_term, target_tz)
         f_ps = executor.submit(platinsport_scraper, search_term, target_tz)
+        f_overtake = (
+            executor.submit(overtakefans_scraper, search_term)
+            if is_f1_search(search_term) else None
+        )
 
         results = []
         results.append(f_ltv.result())
@@ -202,6 +207,9 @@ def acestream():
         except FuturesTimeoutError:
             f_ps.cancel()
             results.append({"source": "PlatinSport", "error": "timeout"})
+
+        if f_overtake is not None:
+            results.append(f_overtake.result())
 
     logging.info(f"Tempo totale per l'elaborazione della richiesta: {time.time() - start_time:.2f} secondi")
     return jsonify(results)
